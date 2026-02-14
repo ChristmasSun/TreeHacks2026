@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Environment variables
+.env
+
+# Manim output
+media/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,9 @@
+[project]
+name = "theo-manim"
+version = "0.1.0"
+description = "Generate 3Blue1Brown-style Manim videos from lecture transcripts"
+requires-python = ">=3.12"
+dependencies = [
+    "dedalus_labs",
+    "manim==0.18.1",
+]
