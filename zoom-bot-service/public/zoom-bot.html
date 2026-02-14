@@ -129,39 +129,80 @@
         window.joinMeeting = async (config) => {
             try {
                 console.log('[Bot] Joining meeting:', config.meetingNumber);
+                console.log('[Bot] Config:', {
+                    sdkKey: config.sdkKey,
+                    meetingNumber: config.meetingNumber,
+                    userName: config.userName,
+                    hasSignature: !!config.signature,
+                    hasPassword: !!config.password,
+                    signatureLength: config.signature?.length
+                });
                 document.getElementById('status').textContent = 'Joining meeting...';
 
+                // Set up global event listeners BEFORE init
+                ZoomMtg.inMeetingServiceListener('onMeetingStatus', (data) => {
+                    console.log('[Bot] Meeting status change:', data);
+                    if (data.meetingStatus === 2) {
+                        console.log('[Bot] CONNECTED!');
+                        window.botState.status = 'joined';
+                    }
+                });
+
+                console.log('[Bot] Calling ZoomMtg.init...');
                 ZoomMtg.init({
                     leaveUrl: 'about:blank',
+                    isSupportAV: true,
                     success: (success) => {
-                        console.log('[Bot] SDK initialized');
+                        console.log('[Bot] Init success!', success);
+                        console.log('[Bot] Now calling ZoomMtg.join...');
 
-                        ZoomMtg.join({
+                        const joinConfig = {
                             signature: config.signature,
                             sdkKey: config.sdkKey,
                             meetingNumber: config.meetingNumber,
                             userName: config.userName,
                             password: config.password || '',
-                            success: (success) => {
-                                console.log('[Bot] Join success:', success);
+                            success: (res) => {
+                                console.log('[Bot] ✅ JOIN SUCCESS!', res);
                                 window.botState.status = 'joined';
-                                window.botState.participantId = success.result?.currentUser?.userId;
+                                window.botState.participantId = res?.result?.currentUser?.userId;
+                                document.getElementById('status').textContent = 'JOINED SUCCESSFULLY!';
                             },
-                            error: (error) => {
-                                console.error('[Bot] Join error:', error);
+                            error: (err) => {
+                                console.error('[Bot] ❌ JOIN ERROR!', err);
+                                console.error('[Bot] Error type:', typeof err);
+                                console.error('[Bot] Error keys:', Object.keys(err || {}));
                                 window.botState.status = 'error';
-                                window.botState.error = error.reason;
+                                window.botState.error = JSON.stringify(err);
+                                document.getElementById('status').textContent = 'Join failed: ' + JSON.stringify(err);
                             }
-                        });
+                        };
+
+                        console.log('[Bot] Join config prepared');
+                        console.log('[Bot] Executing ZoomMtg.join NOW...');
+
+                        setTimeout(() => {
+                            try {
+                                const result = ZoomMtg.join(joinConfig);
+                                console.log('[Bot] ZoomMtg.join() returned:', result);
+                                console.log('[Bot] Return type:', typeof result);
+                            } catch (e) {
+                                console.error('[Bot] EXCEPTION in ZoomMtg.join():', e);
+                                window.botState.status = 'error';
+                                window.botState.error = e.message;
+                            }
+                        }, 100);
                     },
                     error: (error) => {
-                        console.error('[Bot] Init error:', error);
+                        console.error('[Bot] ❌ INIT ERROR!', error);
+                        console.error('[Bot] Error details:', JSON.stringify(error, null, 2));
                         window.botState.status = 'error';
-                        window.botState.error = error.reason;
+                        window.botState.error = JSON.stringify(error);
+                        document.getElementById('status').textContent = 'Init failed: ' + JSON.stringify(error);
                     }
                 });
             } catch (error) {
-                console.error('[Bot] Exception:', error);
+                console.error('[Bot] OUTER EXCEPTION:', error);
                 window.botState.status = 'error';
                 window.botState.error = error.message;
             }

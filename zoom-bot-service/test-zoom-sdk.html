@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zoom SDK Test</title>
+</head>
+<body>
+    <h1>Zoom SDK Test</h1>
+    <button onclick="joinMeeting()">Join Meeting</button>
+    <div id="status">Not joined</div>
+    <div id="zmmtg-root"></div>
+
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/react.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/react-dom.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/redux.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/redux-thunk.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/lodash.min.js"></script>
+    <script src="https://source.zoom.us/zoom-meeting-3.7.0.min.js"></script>
+
+    <script>
+        ZoomMtg.preLoadWasm();
+        ZoomMtg.prepareWebSDK();
+
+        function generateSignature(meetingNumber) {
+            // For testing, we'll use a server endpoint or hardcode it
+            // In production, generate this server-side
+            const sdkKey = 'Go0h7aml1ORpfQecQ8cwMJ5wt7FB8tIPNXA2';
+            // Signature needs to be generated server-side
+            // For now, just return empty - we'll see the error
+            return '';
+        }
+
+        function joinMeeting() {
+            const sdkKey = 'Go0h7aml1ORpfQecQ8cwMJ5wt7FB8tIPNXA2';
+            const meetingNumber = prompt('Enter Meeting Number:');
+            const passcode = prompt('Enter Passcode:');
+            const userName = 'Test Bot';
+
+            document.getElementById('status').textContent = 'Initializing SDK...';
+
+            ZoomMtg.init({
+                leaveUrl: window.location.href,
+                success: function() {
+                    console.log('SDK initialized');
+                    document.getElementById('status').textContent = 'SDK initialized, joining...';
+
+                    // For testing, call your bot service to generate signature
+                    fetch('http://localhost:3001/generate-signature', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ meetingNumber, role: 0 })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        ZoomMtg.join({
+                            signature: data.signature,
+                            sdkKey: sdkKey,
+                            meetingNumber: meetingNumber,
+                            userName: userName,
+                            password: passcode,
+                            success: function(res) {
+                                console.log('Joined successfully!', res);
+                                document.getElementById('status').textContent = 'JOINED!';
+                            },
+                            error: function(error) {
+                                console.error('Join failed:', error);
+                                document.getElementById('status').textContent = 'Join failed: ' + JSON.stringify(error);
+                            }
+                        });
+                    })
+                    .catch(err => {
+                        document.getElementById('status').textContent = 'Signature error: ' + err;
+                    });
+                },
+                error: function(error) {
+                    console.error('Init failed:', error);
+                    document.getElementById('status').textContent = 'Init failed: ' + JSON.stringify(error);
+                }
+            });
+        }
+    </script>
+</body>
+</html>

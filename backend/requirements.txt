@@ -11,8 +11,7 @@ asyncpg==0.29.0  # PostgreSQL async driver for production
 psycopg2-binary==2.9.9  # PostgreSQL driver
 
 # Zoom SDK/API
-zoomus==1.1.7
-pyzoom==0.1.1
+zoomus==1.2.1
 
 # HeyGen API (using requests until official SDK)
 requests==2.31.0

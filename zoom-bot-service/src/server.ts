@@ -208,6 +208,107 @@ export function createServer(botManager: BotManager) {
     }
   });
 
+  // ==================== Utilities ====================
+
+  /**
+   * POST /generate-signature
+   * Generate Zoom SDK signature for testing
+   */
+  app.post('/generate-signature', (req: Request, res: Response) => {
+    const { meetingNumber, role } = req.body;
+
+    if (!meetingNumber) {
+      return res.status(400).json({ error: 'Missing meetingNumber' });
+    }
+
+    const { generateJWT } = require('./utils/signature');
+    const signature = generateJWT(
+      process.env.ZOOM_SDK_KEY!,
+      process.env.ZOOM_SDK_SECRET!,
+      meetingNumber,
+      role || 0
+    );
+
+    res.json({ signature });
+  });
+
+  /**
+   * POST /test-auto
+   * Automated test: Creates a meeting and joins it
+   */
+  app.post('/test-auto', async (req: Request, res: Response) => {
+    try {
+      const axios = require('axios');
+
+      // Check OAuth credentials
+      if (!process.env.ZOOM_ACCOUNT_ID || !process.env.ZOOM_CLIENT_ID || !process.env.ZOOM_CLIENT_SECRET) {
+        return res.status(400).json({
+          error: 'Missing OAuth credentials',
+          setup_instructions: {
+            step1: 'Go to https://marketplace.zoom.us/develop/create',
+            step2: 'Create a Server-to-Server OAuth app',
+            step3: 'Add scopes: meeting:write, meeting:read',
+            step4: 'Add to .env: ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET'
+          }
+        });
+      }
+
+      // Get OAuth token
+      const authString = Buffer.from(`${process.env.ZOOM_CLIENT_ID}:${process.env.ZOOM_CLIENT_SECRET}`).toString('base64');
+      const tokenResponse = await axios.post(
+        `https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${process.env.ZOOM_ACCOUNT_ID}`,
+        {},
+        { headers: { 'Authorization': `Basic ${authString}` } }
+      );
+
+      const accessToken = tokenResponse.data.access_token;
+
+      // Create meeting
+      const meetingResponse = await axios.post(
+        'https://api.zoom.us/v2/users/me/meetings',
+        {
+          topic: 'Bot Auto-Test Meeting',
+          type: 1,
+          settings: {
+            join_before_host: true,
+            waiting_room: false,
+            mute_upon_entry: false
+          }
+        },
+        { headers: { 'Authorization': `Bearer ${accessToken}` } }
+      );
+
+      const meeting = {
+        id: meetingResponse.data.id.toString(),
+        password: meetingResponse.data.password,
+        join_url: meetingResponse.data.join_url
+      };
+
+      // Create bot to join
+      const botId = await botManager.createBot({
+        meetingNumber: meeting.id,
+        passcode: meeting.password,
+        botName: 'Auto-Test Bot',
+        roomId: 0
+      });
+
+      res.json({
+        message: 'Auto-test started',
+        meeting,
+        bot_id: botId,
+        status: 'Check /bots/' + botId + ' for status'
+      });
+
+    } catch (error: any) {
+      console.error('[API] Auto-test error:', error);
+      res.status(500).json({
+        error: 'Auto-test failed',
+        message: error.message,
+        details: error.response?.data
+      });
+    }
+  });
+
   // ==================== Statistics ====================
 
   /**

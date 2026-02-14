@@ -71,10 +71,12 @@ export class ZoomBot extends EventEmitter {
 
       // Enable console logging from browser
       this.page.on('console', (msg) => {
-        const text = msg.text();
-        if (text.startsWith('[Bot]')) {
-          console.log(`[Bot ${this.botId}] ${text}`);
-        }
+        console.log(`[Bot ${this.botId}] [Browser ${msg.type()}]:`, msg.text());
+      });
+
+      // Log page errors
+      this.page.on('pageerror', (error) => {
+        console.error(`[Bot ${this.botId}] [Page Error]:`, error.message, error.stack);
       });
 
       // Load Zoom bot HTML page
@@ -85,9 +87,27 @@ export class ZoomBot extends EventEmitter {
 
       console.log(`[Bot ${this.botId}] HTML loaded, joining meeting...`);
 
+      // Check if joinMeeting function exists
+      const hasJoinFunction = await this.page.evaluate(() => {
+        return typeof (window as any).joinMeeting === 'function';
+      });
+
+      if (!hasJoinFunction) {
+        throw new Error('joinMeeting function not found in page!');
+      }
+
+      console.log(`[Bot ${this.botId}] joinMeeting function found, calling it...`);
+
       // Join meeting via page script
-      await this.page.evaluate((joinConfig) => {
-        return (window as any).joinMeeting(joinConfig);
+      const joinResult = await this.page.evaluate((joinConfig) => {
+        console.log('[Zoom] About to call joinMeeting with config:', joinConfig);
+        try {
+          (window as any).joinMeeting(joinConfig);
+          return { success: true };
+        } catch (error: any) {
+          console.error('[Zoom] Error calling joinMeeting:', error);
+          return { success: false, error: error?.message || String(error) };
+        }
       }, {
         signature,
         sdkKey: process.env.ZOOM_SDK_KEY,
@@ -95,6 +115,8 @@ export class ZoomBot extends EventEmitter {
         userName: this.config.botName,
         password: this.config.passcode || ''
       });
+
+      console.log(`[Bot ${this.botId}] joinMeeting call result:`, joinResult);
 
       // Wait for join to complete
       await this.waitForBotStatus('joined', 30000);
@@ -293,6 +315,8 @@ export class ZoomBot extends EventEmitter {
 
       const botState = await this.page.evaluate(() => (window as any).botState);
 
+      console.log(`[Bot ${this.botId}] Current state:`, botState);
+
       if (botState.status === targetStatus) {
         return;
       }
@@ -302,6 +326,13 @@ export class ZoomBot extends EventEmitter {
       }
 
       await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Log final state before timeout
+    if (this.page) {
+      const finalState = await this.page.evaluate(() => (window as any).botState);
+      console.error(`[Bot ${this.botId}] Timeout! Final state:`, finalState);
+      throw new Error(`Timeout waiting for status: ${targetStatus}. Current status: ${finalState.status}, error: ${finalState.error || 'none'}`);
     }
 
     throw new Error(`Timeout waiting for status: ${targetStatus}`);
