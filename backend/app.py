@@ -152,6 +152,9 @@ async def handle_message(message_type: str, payload: dict, db: AsyncSession) -> 
         "GET_SESSION_STATUS": handle_get_session_status,
         "GET_STUDENTS": handle_get_students,
         "VALIDATE_ZOOM": handle_validate_zoom,
+        "GET_ROOM_TRANSCRIPTS": handle_get_room_transcripts,
+        "VALIDATE_DEEPGRAM": handle_validate_deepgram,
+        "PROCESS_AUDIO": handle_process_audio,
     }
 
     handler = handlers.get(message_type)
@@ -187,7 +190,9 @@ async def handle_create_session(payload: dict, db: AsyncSession) -> dict:
     }
     """
     try:
-        orchestrator = SessionOrchestrator()
+        orchestrator = SessionOrchestrator(
+            on_transcript_callback=forward_transcript_to_frontend
+        )
 
         # Create session with Zoom meeting and breakout rooms
         result = await orchestrator.create_breakout_session(
@@ -315,6 +320,104 @@ async def handle_validate_zoom(payload: dict, db: AsyncSession) -> dict:
         return {
             "type": "ERROR",
             "payload": {"message": f"Failed to validate Zoom: {str(e)}"}
+        }
+
+
+async def handle_validate_deepgram(payload: dict, db: AsyncSession) -> dict:
+    """Validate Deepgram API credentials"""
+    try:
+        orchestrator = SessionOrchestrator()
+        is_valid = await orchestrator.validate_transcription_service()
+
+        return {
+            "type": "DEEPGRAM_VALIDATION",
+            "payload": {
+                "valid": is_valid,
+                "message": "Deepgram credentials are valid" if is_valid else "Deepgram credentials are invalid"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error validating Deepgram: {e}")
+        return {
+            "type": "ERROR",
+            "payload": {"message": f"Failed to validate Deepgram: {str(e)}"}
+        }
+
+
+async def handle_get_room_transcripts(payload: dict, db: AsyncSession) -> dict:
+    """
+    Get transcripts for a specific room
+
+    Payload:
+    {
+        "room_id": int,
+        "limit": int (optional, default 100)
+    }
+    """
+    try:
+        room_id = payload["room_id"]
+        limit = payload.get("limit", 100)
+
+        orchestrator = SessionOrchestrator()
+        transcripts = await orchestrator.get_room_transcripts(
+            db=db,
+            room_id=room_id,
+            limit=limit
+        )
+
+        return {
+            "type": "ROOM_TRANSCRIPTS",
+            "payload": {
+                "room_id": room_id,
+                "transcripts": transcripts,
+                "count": len(transcripts)
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting room transcripts: {e}")
+        return {
+            "type": "ERROR",
+            "payload": {"message": f"Failed to get room transcripts: {str(e)}"}
+        }
+
+
+async def handle_process_audio(payload: dict, db: AsyncSession) -> dict:
+    """
+    Process audio chunk from HeyGen avatar
+
+    Payload:
+    {
+        "room_id": int,
+        "audio_data": bytes (base64 encoded)
+    }
+    """
+    try:
+        import base64
+
+        room_id = payload["room_id"]
+        audio_data_b64 = payload["audio_data"]
+
+        # Decode base64 audio data
+        audio_data = base64.b64decode(audio_data_b64)
+
+        orchestrator = SessionOrchestrator()
+        success = await orchestrator.process_audio_for_room(
+            room_id=room_id,
+            audio_data=audio_data
+        )
+
+        return {
+            "type": "AUDIO_PROCESSED",
+            "payload": {
+                "room_id": room_id,
+                "success": success
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error processing audio: {e}")
+        return {
+            "type": "ERROR",
+            "payload": {"message": f"Failed to process audio: {str(e)}"}
         }
 
 
