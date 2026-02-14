@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom Bot</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+        }
+        #zmmtg-root {
+            display: none;
+        }
+        #status {
+            color: white;
+            font-family: monospace;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="status">Initializing Zoom Bot...</div>
+    <div id="zmmtg-root"></div>
+
+    <!-- Zoom Web SDK -->
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/react.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/react-dom.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/redux.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/redux-thunk.min.js"></script>
+    <script src="https://source.zoom.us/3.7.0/lib/vendor/lodash.min.js"></script>
+    <script src="https://source.zoom.us/zoom-meeting-3.7.0.min.js"></script>
+
+    <script>
+        const { ZoomMtg } = window;
+
+        // Expose to window for Puppeteer communication
+        window.botState = {
+            status: 'initializing',
+            participantId: null,
+            error: null,
+            audioEnabled: false,
+            inBreakoutRoom: false
+        };
+
+        // Initialize Zoom SDK
+        ZoomMtg.preLoadWasm();
+        ZoomMtg.prepareWebSDK();
+
+        // Event handlers
+        const eventHandlers = {
+            onMeetingStatus: (status) => {
+                console.log('[Bot] Meeting status:', status);
+                window.botState.status = status.meetingStatus;
+
+                if (status.meetingStatus === 2) { // Connected
+                    window.botState.status = 'joined';
+                    document.getElementById('status').textContent = 'Bot joined meeting';
+                }
+            },
+
+            onUserJoin: (data) => {
+                console.log('[Bot] User joined:', data);
+            },
+
+            onUserLeave: (data) => {
+                console.log('[Bot] User left:', data);
+            },
+
+            onAudioChange: (payload) => {
+                console.log('[Bot] Audio change:', payload);
+            },
+
+            onActiveSpeaker: (data) => {
+                console.log('[Bot] Active speaker:', data);
+            }
+        };
+
+        // Join meeting function
+        window.joinMeeting = async (config) => {
+            try {
+                console.log('[Bot] Joining meeting:', config.meetingNumber);
+                document.getElementById('status').textContent = 'Joining meeting...';
+
+                ZoomMtg.init({
+                    leaveUrl: 'about:blank',
+                    success: (success) => {
+                        console.log('[Bot] SDK initialized');
+
+                        ZoomMtg.join({
+                            signature: config.signature,
+                            sdkKey: config.sdkKey,
+                            meetingNumber: config.meetingNumber,
+                            userName: config.userName,
+                            password: config.password || '',
+                            success: (success) => {
+                                console.log('[Bot] Join success:', success);
+                                window.botState.status = 'joined';
+                                window.botState.participantId = success.result?.currentUser?.userId;
+                            },
+                            error: (error) => {
+                                console.error('[Bot] Join error:', error);
+                                window.botState.status = 'error';
+                                window.botState.error = error.reason;
+                            }
+                        });
+                    },
+                    error: (error) => {
+                        console.error('[Bot] Init error:', error);
+                        window.botState.status = 'error';
+                        window.botState.error = error.reason;
+                    }
+                });
+            } catch (error) {
+                console.error('[Bot] Exception:', error);
+                window.botState.status = 'error';
+                window.botState.error = error.message;
+            }
+        };
+
+        // Audio control functions
+        window.enableAudio = async () => {
+            try {
+                console.log('[Bot] Enabling audio...');
+                await ZoomMtg.unmuteAudio();
+                window.botState.audioEnabled = true;
+                return { success: true };
+            } catch (error) {
+                console.error('[Bot] Failed to enable audio:', error);
+                return { success: false, error: error.message };
+            }
+        };
+
+        window.disableAudio = async () => {
+            try {
+                await ZoomMtg.muteAudio();
+                window.botState.audioEnabled = false;
+                return { success: true };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        };
+
+        // Get audio stream (for transcription)
+        window.getAudioStream = () => {
+            // This would require additional Zoom SDK APIs for raw audio access
+            // For now, return placeholder
+            return null;
+        };
+
+        // Leave meeting
+        window.leaveMeeting = async () => {
+            try {
+                console.log('[Bot] Leaving meeting...');
+                await ZoomMtg.leaveMeeting();
+                window.botState.status = 'disconnected';
+                return { success: true };
+            } catch (error) {
+                console.error('[Bot] Failed to leave:', error);
+                return { success: false, error: error.message };
+            }
+        };
+
+        // Join breakout room
+        window.joinBreakoutRoom = async (roomId) => {
+            try {
+                console.log('[Bot] Joining breakout room:', roomId);
+                // Note: Zoom Web SDK has limited breakout room API
+                // This may require host to assign bot to room
+                window.botState.inBreakoutRoom = true;
+                return { success: true };
+            } catch (error) {
+                console.error('[Bot] Failed to join breakout room:', error);
+                return { success: false, error: error.message };
+            }
+        };
+
+        console.log('[Bot] Ready for commands');
+    </script>
+</body>
+</html>
