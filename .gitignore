@@ -13,6 +13,11 @@ build/
 
 # Manim output
 media/
+output/
+
+# Experiments and docs (local only)
+experiments/
+docs/
 
 # OS
 .DS_Store

@@ -1,60 +1,162 @@
---- MANIM V0.18.1 CHEAT SHEET & COMPATIBILITY GUIDE ---
+--- MANIM COMMUNITY v0.18.1 CHEAT SHEET ---
 
-### 1. OBJECT POSITIONING (CRITICAL)
-*   **DO NOT USE** deprecated directional methods like `.get_bottom_left()`, `.get_top_right()`, `.get_center_point()`.
-*   **USE** `get_corner(DIRECTION)` instead.
-    *   `obj.get_corner(DL)`  (Down-Left)
-    *   `obj.get_corner(DR)`  (Down-Right)
-    *   `obj.get_corner(UL)`  (Up-Left)
-    *   `obj.get_corner(UR)`  (Up-Right)
-    *   `obj.get_center()`    (Center)
-    *   `obj.get_top()`, `obj.get_bottom()`, `obj.get_left()`, `obj.get_right()` are safe.
+### 1. COMPLETE SCENE EXAMPLE
+```python
+from manim import *
+
+class MyScene(Scene):
+    def construct(self):
+        self.camera.background_color = "#000000"
+
+        # Title
+        title = Text("The Pythagorean Theorem", font_size=36)
+        title.to_edge(UP, buff=0.5)
+        self.play(Write(title))
+        self.wait()
+
+        # Show equation with colored parts
+        equation = MathTex(R"a^2 + b^2 = c^2", font_size=48,
+                           tex_to_color_map={"a": BLUE, "b": GREEN, "c": YELLOW})
+        self.play(Write(equation))
+        self.wait()
+
+        # Transition: shrink title, move equation
+        self.play(
+            title.animate.scale(0.6).to_corner(UL),
+            equation.animate.to_edge(DOWN, buff=0.5),
+        )
+
+        # Build a right triangle
+        triangle = Polygon(ORIGIN, 3*RIGHT, 3*RIGHT + 2*UP, color=WHITE)
+        triangle.move_to(ORIGIN)
+        self.play(Create(triangle), run_time=2)
+        self.wait()
+
+        # Clean up
+        self.play(*[FadeOut(mob) for mob in self.mobjects])
+```
 
 ### 2. TEXT & MATH
-*   **Primary:** Use `Text("Your text here", font_size=36)`.
-*   **Math/Formulas:** Use `MathTex(r"E = mc^2", font_size=48)`.
-    *   **IMPORTANT:** This environment has a special shim for `MathTex` that renders it as `Text`. You can still use standard LaTeX syntax (e.g., `r"\pi"`, `r"\theta"`, `^2`, `_n`), but avoid highly complex nested LaTeX macros that `Text` cannot display.
-    *   Simple symbols (`\alpha`, `\rightarrow`) are automatically converted to unicode.
-*   **Fonts:** Do not specify custom fonts unless you are certain they exist. Default is safe.
+*   **Plain text:** `Text("Hello", font_size=36)`
+*   **Math/LaTeX:** `MathTex(R"E = mc^2", font_size=48)`
+*   **Color parts of math:** `MathTex(R"\int f(x)\,dx", tex_to_color_map={"f": BLUE, "x": YELLOW})`
+*   **Select parts:** `equation.get_part_by_tex("x")` or `equation.get_parts_by_tex("x")`
+*   **Color by tex:** `equation.set_color_by_tex("x", BLUE)`
+*   **IMPORTANT:** This environment may shim `MathTex` to render as `Text`. Use simple LaTeX — avoid deeply nested macros like `\frac{\partial}{\partial x}`. Prefer `\alpha`, `\pi`, `^2`, `_n` which auto-convert to unicode.
 
-### 3. GROUPING
-*   Use `VGroup(obj1, obj2)` to group vector mobjects.
-*   `VGroup` supports `.arrange(RIGHT, buff=0.5)`, `.next_to(...)`, etc.
+### 3. AXES & GRAPHING
+```python
+# Create axes: (min, max, step) for each range
+axes = Axes(
+    x_range=(0, 10, 1), y_range=(-2, 2, 0.5),
+    x_length=10, y_length=5,
+    axis_config={"include_numbers": True}
+)
+
+# Plot a function
+graph = axes.plot(lambda x: np.sin(x), color=BLUE)
+graph.set_stroke(width=3)
+
+# Label the graph
+label = axes.get_graph_label(graph, label=MathTex(R"\sin(x)"))
+
+# Place objects AT coordinates on the axes
+dot = Dot(color=RED).move_to(axes.c2p(3, np.sin(3)))
+
+# Area under curve
+area = axes.get_area(graph, x_range=(0, PI), color=BLUE, opacity=0.3)
+```
+*   **NumberPlane** — axes with a grid background: `NumberPlane(x_range=(-4,4), y_range=(-3,3))`
+*   **Coordinate conversion:** `axes.c2p(x, y)` = coordinates-to-point, `axes.p2c(point)` = point-to-coordinates
 
 ### 4. ANIMATIONS
-*   **Creation:** `Create(mobject)`, `DrawBorderThenFill(mobject)`, `Write(text)`.
-*   **Movement:** `obj.animate.move_to(...)`, `obj.animate.shift(...)`, `obj.animate.scale(...)`.
-*   **Transform:** `Transform(obj1, obj2)`, `ReplacementTransform(obj1, obj2)`.
-*   **Indication:** `Indicate(obj)`, `Wiggle(obj)`, `Circumscribe(obj)`.
 
-### 5. SHAPES
-*   `Circle(radius=1, color=RED)`
-*   `Square(side_length=2, color=BLUE)`
-*   `Rectangle(width=4, height=2)`
-*   `Line(start=LEFT, end=RIGHT)`
-*   `Arrow(start=LEFT, end=RIGHT, buff=0)`
-*   **Dashed Lines:** Use `DashedLine(start=..., end=...)`. Do NOT use `Line(...).set_stroke(dash_array=...)`.
+**Creation & removal:**
+*   `Create(mob)` — draw a shape/path
+*   `Write(text)` — write text/math
+*   `FadeIn(mob, shift=UP)` — always add a directional shift for polish
+*   `FadeOut(mob, shift=DOWN)` — directional fade out
+*   `DrawBorderThenFill(mob)` — outline then fill
 
-### 6. LAYOUT CONSTANTS & SPACING
-*   Screen is roughly 14 units wide ( -7 to +7 ) and 8 units tall ( -4 to +4 ).
-*   Use `UP`, `DOWN`, `LEFT`, `RIGHT` vectors.
-*   `ORIGIN` is (0,0,0).
-*   **CRITICAL SPACING RULES:**
-    *   Always use `buff` parameter for spacing: `.next_to(obj, RIGHT, buff=0.5)` (minimum 0.3, recommended 0.5-1.0)
-    *   For text groups: `VGroup(text1, text2).arrange(DOWN, buff=0.4)` (minimum 0.3 between lines)
-    *   Edge positioning: `text.to_edge(UP, buff=0.5)` to avoid clipping at screen edges
-    *   Multiple elements: Use `VGroup(...).arrange()` instead of manual positioning
-    *   **NEVER** place two text objects at the same position or within 0.2 units
-*   **SAFE ZONES:**
-    *   Top zone (titles): Y > 2.5, use `.to_edge(UP, buff=0.5)`
-    *   Bottom zone (captions): Y < -2.5, use `.to_edge(DOWN, buff=0.5)`
-    *   Left zone: X < -4, use `.to_edge(LEFT, buff=0.5)`
-    *   Right zone: X > 4, use `.to_edge(RIGHT, buff=0.5)`
-    *   Center zone: Keep main content/animations here
+**Movement & transformation:**
+*   `obj.animate.move_to(...)`, `.shift(...)`, `.scale(...)`, `.set_color(...)` — chain freely
+*   `Transform(a, b)`, `ReplacementTransform(a, b)`
+*   `TransformMatchingTex(eq1, eq2, key_map={"x": "y"})` — morph equations, matching common LaTeX substrings
 
-### 7. COMMON PITFALLS TO AVOID
-*   **No `ShowCreation`:** Use `Create` instead.
-*   **No `GraphScene`:** Use `Axes` or `NumberPlane` for plotting.
-*   **No `ParametricFunction`:** Use `FunctionGraph` or standard shapes where possible.
-*   **Avoid `SVGMobject`:** Unless you are generating the SVG path yourself.
-*   **Avoid complex `CONFIG` dictionaries:** Pass arguments directly to `__init__` or constructors.
+**Staggered animations (essential for polish):**
+*   `LaggedStartMap(FadeIn, group, shift=0.5*UP, lag_ratio=0.1)` — apply one animation type to many objects with overlap
+*   `LaggedStart(Write(a), Create(b), FadeIn(c), lag_ratio=0.3)` — stagger different animations
+*   `AnimationGroup(anim1, anim2)` — run multiple animations as one group
+*   `Succession(anim1, anim2)` — run animations one after another
+
+**Indication:**
+*   `Indicate(obj)`, `Circumscribe(obj)`, `Wiggle(obj)`
+*   `SurroundingRectangle(obj, color=YELLOW, buff=0.1)` — highlight box
+
+**Timing:**
+*   `self.play(anim, run_time=2)` — control animation duration (default 1s, use 2-4 for important moments)
+*   `self.wait()` or `self.wait(2)` — pause between animations. USE THIS after every animation block.
+
+### 5. DYNAMIC VALUES (ValueTracker + Updaters)
+```python
+tracker = ValueTracker(0)
+
+# Redraw every frame based on tracker
+dot = always_redraw(lambda: Dot().move_to(axes.c2p(tracker.get_value(), 0)))
+
+# Or use add_updater for existing objects
+label = DecimalNumber(0, num_decimal_places=2)
+label.add_updater(lambda m: m.set_value(tracker.get_value()))
+label.add_updater(lambda m: m.next_to(dot, UP))
+
+self.add(dot, label)
+self.play(tracker.animate.set_value(5), run_time=3)
+```
+
+### 6. SHAPES
+*   `Circle(radius=1, color=RED)`, `Dot(point=ORIGIN, color=WHITE)`
+*   `Square(side_length=2)`, `Rectangle(width=4, height=2)`
+*   `Line(start=LEFT, end=RIGHT)`, `Arrow(start=LEFT, end=RIGHT, buff=0)`
+*   `DashedLine(start=..., end=...)` — do NOT use `Line(...).set_stroke(dash_array=...)`
+*   `NumberLine(x_range=(0, 10, 1), length=8, include_numbers=True)`
+
+### 7. GROUPING & LAYOUT
+*   `VGroup(obj1, obj2).arrange(DOWN, buff=0.4)` — vertical stack
+*   `VGroup(*items).arrange(RIGHT, buff=0.5)` — horizontal row
+*   Screen: 14 units wide (-7 to 7), 8 units tall (-4 to 4)
+*   Positioning: `.to_edge(UP, buff=0.5)`, `.to_corner(UL)`, `.next_to(obj, RIGHT, buff=0.5)`, `.move_to(ORIGIN)`
+*   **Always use `buff` parameter** (minimum 0.3, recommended 0.5)
+*   **Max 2-3 text elements on screen** — `FadeOut` old elements before adding new ones
+
+### 8. COLORS
+Available constants: `RED`, `BLUE`, `GREEN`, `YELLOW`, `PURPLE`, `TEAL`, `ORANGE`, `PINK`, `GOLD`, `MAROON`, `WHITE`, `GREY`
+Shades: `BLUE_A` (lightest) through `BLUE_E` (darkest). Same for `RED_A-E`, `GREEN_A-E`, `GREY_A-E`.
+Use color to guide attention — highlight what matters, keep supporting elements subtle (`GREY`, low opacity).
+
+### 9. SCENE STRUCTURE PATTERN
+Organize `construct()` with comment sections. Use `get_*` helper methods for building complex mobjects, keep animation logic in `construct()`.
+```python
+def construct(self):
+    # Setup
+    ...
+    self.wait()
+
+    # Introduce concept A
+    ...
+    self.wait()
+
+    # Transition to concept B
+    self.play(FadeOut(old_stuff), FadeIn(new_stuff, shift=UP))
+    self.wait()
+
+    # Conclusion
+    ...
+```
+
+### 10. PITFALLS TO AVOID
+*   **No `ShowCreation`** — use `Create` instead
+*   **No `GraphScene`** — use `Axes` or `NumberPlane`
+*   **No `CONFIG` dicts** — pass arguments directly to constructors
+*   **No custom fonts** unless certain they exist
+*   **No `SVGMobject`** unless generating SVG paths yourself
+*   **Angles:** use `45 * DEGREES` (not `DEG`)

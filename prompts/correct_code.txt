@@ -1,24 +1,25 @@
-You are a Manim animation expert. The Manim code you previously generated FAILED to render. Your task is to analyze the problem and provide a corrected, fully functional script.
+You are a Manim animation expert. The code below FAILED to render. Fix it.
 
---- ANALYSIS & INSTRUCTIONS ---
-1.  **Previous Attempt Failed:** The code you generated was flawed and resulted in an error. You MUST fix it.
-2.  **Error Analysis:** The Manim renderer produced the following error. You MUST analyze this error message to understand what went wrong.
-    *   **Manim Error:** `{error}`
-3.  **Non-Negotiable Rules:**
-    *   You MUST respond with only raw Python code.
-    *   Do NOT include ```python, ```, or any other markdown.
-    *   The code MUST include `from manim import *`.
-    *   The code MUST define a Manim `Scene`.
-    *   The code MUST be runnable with Manim Community v0.18.1.
-4.  **Visual Requirements (always enforce):**
-    *   Set `self.camera.background_color = "#000000"` at the very start of `construct`.
-    *   Keep the scene clean: limit to two text blocks at a time, fade out older text before adding new labels, and space elements so nothing overlaps.
-    *   Use high-contrast colors so visuals remain legible on the black background.
+--- ERROR ---
+{error}
 
-{cheat_sheet}
+--- ORIGINAL INTENT ---
+{description}
+
+--- VOICEOVER SYNC ---
+{narration_context}
 
 --- FAILED CODE ---
 {code}
---- END FAILED CODE ---
 
-Now, provide the corrected, complete, and valid Manim code.
+--- INSTRUCTIONS ---
+1.  Analyze the error. Fix the root cause, not just the symptom.
+2.  If the approach is fundamentally broken, simplify — use a different technique that achieves the same visual intent.
+3.  Respond with ONLY raw Python code. No markdown, no explanation.
+4.  Include `from manim import *`. Define a single Scene class.
+5.  Must work with Manim Community v0.18.1.
+6.  Set `self.camera.background_color = "#000000"` at top of `construct`.
+7.  Keep the scene clean: max 2-3 text blocks at once, `FadeOut` old elements, use `buff` for spacing.
+8.  Maintain the same total animation duration to stay synced with the voiceover.
+
+{cheat_sheet}
