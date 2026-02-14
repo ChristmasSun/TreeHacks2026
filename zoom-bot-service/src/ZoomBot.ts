@@ -1,11 +1,12 @@
 /**
  * ZoomBot - Individual bot that joins Zoom meetings
- * Uses Zoom Meeting SDK for programmatic meeting participation
+ * Uses Zoom Rivet SDK for headless bot participation
  */
 import { EventEmitter } from 'events';
 import { BotConfig, BotStatus, AudioChunk } from './types';
 import { generateJWT } from './utils/signature';
 import axios from 'axios';
+import { RivetClient } from '@zoom/rivet';
 
 export class ZoomBot extends EventEmitter {
   private botId: string;
@@ -13,10 +14,7 @@ export class ZoomBot extends EventEmitter {
   private status: BotStatus;
   private zoomParticipantId?: string;
   private audioEnabled: boolean = false;
-
-  // Note: Zoom Meeting SDK requires a browser/display environment
-  // For headless bots, we need to use Puppeteer or similar
-  private puppeteerPage: any = null;
+  private rivetClient: RivetClient | null = null;
 
   constructor(botId: string, config: BotConfig) {
     super();
@@ -26,9 +24,7 @@ export class ZoomBot extends EventEmitter {
   }
 
   /**
-   * Join Zoom meeting
-   * This is a simplified version - actual implementation requires
-   * either Puppeteer (headless browser) or Zoom Linux SDK
+   * Join Zoom meeting using Rivet SDK
    */
   async join(): Promise<void> {
     try {
@@ -37,22 +33,43 @@ export class ZoomBot extends EventEmitter {
 
       console.log(`[Bot ${this.botId}] Joining meeting ${this.config.meetingNumber}`);
 
-      // Generate signature
       const signature = generateJWT(
         process.env.ZOOM_SDK_KEY!,
         process.env.ZOOM_SDK_SECRET!,
         this.config.meetingNumber,
-        0 // participant role
+        0
       );
 
-      // TODO: Implement actual Zoom SDK join
-      // Options:
-      // 1. Launch Puppeteer with Zoom Web SDK
-      // 2. Use Zoom Linux SDK (C++ bindings)
-      // 3. Use separate Electron process
+      this.rivetClient = new RivetClient({
+        sessionName: this.config.botName,
+        sessionPasscode: this.config.passcode || '',
+      });
 
-      // Placeholder: Simulate successful join
-      await this.simulateJoin(signature);
+      this.rivetClient.on('connected', () => {
+        console.log(`[Bot ${this.botId}] Connected to Zoom via Rivet`);
+        this.zoomParticipantId = this.rivetClient?.getParticipantId();
+      });
+
+      this.rivetClient.on('peer-video-state-change', (payload: any) => {
+        console.log(`[Bot ${this.botId}] Peer video state changed:`, payload);
+      });
+
+      this.rivetClient.on('active-speaker', (payload: any) => {
+        console.log(`[Bot ${this.botId}] Active speaker:`, payload);
+      });
+
+      this.rivetClient.on('error', (error: Error) => {
+        console.error(`[Bot ${this.botId}] Rivet error:`, error);
+        this.emit('error', error);
+      });
+
+      await this.rivetClient.join({
+        meetingNumber: this.config.meetingNumber,
+        signature: signature,
+        sdkKey: process.env.ZOOM_SDK_KEY!,
+        userName: this.config.botName,
+        password: this.config.passcode
+      });
 
       this.status = BotStatus.JOINED;
       this.emit('status-change', this.status);
@@ -75,8 +92,11 @@ export class ZoomBot extends EventEmitter {
     try {
       console.log(`[Bot ${this.botId}] Joining breakout room ${breakoutRoomId}`);
 
-      // TODO: Use Zoom SDK to join breakout room
-      // this.zoomClient.joinBreakoutRoom(breakoutRoomId);
+      if (!this.rivetClient) {
+        throw new Error('Bot not connected to Zoom');
+      }
+
+      await this.rivetClient.joinBreakoutRoom(breakoutRoomId);
 
       this.status = BotStatus.IN_BREAKOUT_ROOM;
       this.emit('status-change', this.status);
@@ -91,15 +111,32 @@ export class ZoomBot extends EventEmitter {
   }
 
   /**
-   * Enable audio capture and streaming
+   * Enable audio capture and streaming using Rivet
    */
   async enableAudio(): Promise<void> {
     if (this.audioEnabled) return;
 
     console.log(`[Bot ${this.botId}] Enabling audio`);
 
-    // TODO: Set up audio stream listeners
-    // this.setupAudioCapture();
+    if (!this.rivetClient) {
+      throw new Error('Bot not connected to Zoom');
+    }
+
+    this.rivetClient.subscribeToAudio();
+
+    this.rivetClient.on('audio-data', (audioData: ArrayBuffer) => {
+      const chunk: AudioChunk = {
+        roomId: this.config.roomId,
+        audioData: Buffer.from(audioData),
+        timestamp: Date.now(),
+        sampleRate: 16000,
+        channels: 1
+      };
+
+      this.emit('audio-chunk', chunk);
+    });
+
+    await this.rivetClient.unmuteAudio();
 
     this.audioEnabled = true;
     this.emit('audio-enabled');
@@ -114,26 +151,26 @@ export class ZoomBot extends EventEmitter {
       return;
     }
 
-    // TODO: Send audio to Zoom SDK for playback
-    // this.zoomClient.playAudio(audioData);
+    if (!this.rivetClient) {
+      throw new Error('Bot not connected to Zoom');
+    }
 
     console.log(`[Bot ${this.botId}] Playing audio chunk (${audioData.length} bytes)`);
+
+    await this.rivetClient.sendAudio(audioData);
   }
 
   /**
-   * Leave meeting and cleanup
+   * Leave meeting and cleanup Rivet connection
    */
   async leave(): Promise<void> {
     console.log(`[Bot ${this.botId}] Leaving meeting`);
 
     try {
-      // TODO: Leave Zoom meeting
-      // await this.zoomClient.leave();
-
-      // Cleanup Puppeteer if used
-      if (this.puppeteerPage) {
-        await this.puppeteerPage.close();
-        this.puppeteerPage = null;
+      if (this.rivetClient) {
+        await this.rivetClient.leave();
+        this.rivetClient.destroy();
+        this.rivetClient = null;
       }
 
       this.status = BotStatus.DISCONNECTED;
@@ -171,40 +208,6 @@ export class ZoomBot extends EventEmitter {
   }
 
   // ==================== Private Methods ====================
-
-  /**
-   * Simulate joining (placeholder until Zoom SDK is implemented)
-   */
-  private async simulateJoin(signature: string): Promise<void> {
-    // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Simulate successful join
-    this.zoomParticipantId = `participant_${Math.random().toString(36).substr(2, 9)}`;
-
-    console.log(`[Bot ${this.botId}] Simulated join with signature`);
-    console.log(`[Bot ${this.botId}] Participant ID: ${this.zoomParticipantId}`);
-  }
-
-  /**
-   * Set up audio capture from Zoom
-   * TODO: Implement actual audio streaming
-   */
-  private setupAudioCapture(): void {
-    // Listen for audio from Zoom
-    // this.zoomClient.on('audio-data', (audioData) => {
-    //   const chunk: AudioChunk = {
-    //     roomId: this.config.roomId,
-    //     audioData: audioData,
-    //     timestamp: Date.now(),
-    //     sampleRate: 16000,
-    //     channels: 1
-    //   };
-    //
-    //   // Emit to AudioRouter
-    //   this.emit('audio-chunk', chunk);
-    // });
-  }
 
   /**
    * Send audio to Python backend for processing

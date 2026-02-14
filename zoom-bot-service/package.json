@@ -13,7 +13,7 @@
   "author": "TreeHacks2026",
   "license": "MIT",
   "dependencies": {
-    "@zoom/meetingsdk": "^3.7.0",
+    "@zoom/rivet": "^1.0.0",
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "ws": "^8.16.0",
