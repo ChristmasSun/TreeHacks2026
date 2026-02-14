@@ -5,6 +5,7 @@
 import { app, BrowserWindow, screen } from 'electron';
 import { join } from 'path';
 import { WebSocketClient } from './websocket-client';
+import { setupIPCHandlers } from './ipc-handlers';
 
 let mainWindow: BrowserWindow | null = null;
 let wsClient: WebSocketClient | null = null;
@@ -45,9 +46,16 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow();
 
+  if (!mainWindow) {
+    throw new Error('Failed to create main window');
+  }
+
   // Initialize WebSocket connection to Python backend
   wsClient = new WebSocketClient('ws://localhost:8000/ws');
   wsClient.connect();
+
+  // Set up IPC handlers
+  setupIPCHandlers(wsClient, mainWindow);
 
   // Forward messages from backend to renderer
   wsClient.on('message', (data) => {
