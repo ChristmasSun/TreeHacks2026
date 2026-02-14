@@ -13,6 +13,7 @@ export function createServer(botManager: BotManager) {
   // Middleware
   app.use(cors());
   app.use(express.json({ limit: '10mb' })); // For audio data
+  app.use(express.static('public')); // Serve static files from public directory
 
   // Health check
   app.get('/health', (req: Request, res: Response) => {

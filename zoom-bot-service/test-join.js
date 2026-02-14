@@ -60,15 +60,16 @@ async function main() {
   const signature = generateJWT(SDK_KEY, SDK_SECRET, meetingNumber, 0);
   console.log('✅ Signature generated:', signature.substring(0, 30) + '...\n');
 
-  console.log('🚀 Launching browser (non-headless so you can see)...');
+  console.log('🚀 Launching browser...');
   const browser = await puppeteer.launch({
-    headless: false,
+    headless: 'new',
     args: [
       '--use-fake-ui-for-media-stream',
       '--use-fake-device-for-media-stream',
       '--no-sandbox',
       '--disable-setuid-sandbox',
-      '--disable-web-security'
+      '--disable-web-security',
+      '--disable-dev-shm-usage'
     ]
   });
 
