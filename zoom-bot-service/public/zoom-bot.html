@@ -48,6 +48,54 @@
         ZoomMtg.preLoadWasm();
         ZoomMtg.prepareWebSDK();
 
+        // Audio playback system
+        let audioPlaybackContext = null;
+        let audioPlaybackQueue = [];
+        let isPlayingAudio = false;
+
+        window.playAudioData = async (audioBase64) => {
+            try {
+                if (!audioPlaybackContext) {
+                    audioPlaybackContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                // Decode base64 to ArrayBuffer
+                const binaryString = atob(audioBase64);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                // Decode audio data
+                const audioBuffer = await audioPlaybackContext.decodeAudioData(bytes.buffer);
+
+                // Create audio source and connect to destination
+                const source = audioPlaybackContext.createBufferSource();
+                source.buffer = audioBuffer;
+
+                // Create gain node for volume control
+                const gainNode = audioPlaybackContext.createGain();
+                gainNode.gain.value = 1.0;
+
+                source.connect(gainNode);
+                gainNode.connect(audioPlaybackContext.destination);
+
+                // Play audio
+                source.start(0);
+
+                return new Promise((resolve) => {
+                    source.onended = () => {
+                        console.log('[Bot] Audio playback finished');
+                        resolve({ success: true });
+                    };
+                });
+
+            } catch (error) {
+                console.error('[Bot] Audio playback error:', error);
+                return { success: false, error: error.message };
+            }
+        };
+
         // Event handlers
         const eventHandlers = {
             onMeetingStatus: (status) => {
@@ -142,11 +190,74 @@
             }
         };
 
-        // Get audio stream (for transcription)
-        window.getAudioStream = () => {
-            // This would require additional Zoom SDK APIs for raw audio access
-            // For now, return placeholder
-            return null;
+        // Audio capture setup
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let audioContext = null;
+        let audioStreamDestination = null;
+
+        window.startAudioCapture = async () => {
+            try {
+                // Get audio stream from Zoom
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                // Create audio context for processing
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                audioStreamDestination = audioContext.createMediaStreamDestination();
+                source.connect(audioStreamDestination);
+
+                // Start recording
+                mediaRecorder = new MediaRecorder(audioStreamDestination.stream, {
+                    mimeType: 'audio/webm;codecs=opus',
+                    audioBitsPerSecond: 16000
+                });
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        // Convert to base64 and store
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const base64 = reader.result.split(',')[1];
+                            if (!window.audioChunksBuffer) {
+                                window.audioChunksBuffer = [];
+                            }
+                            window.audioChunksBuffer.push({
+                                data: base64,
+                                timestamp: Date.now(),
+                                size: event.data.size
+                            });
+                        };
+                        reader.readAsDataURL(event.data);
+                    }
+                };
+
+                // Record in 1-second chunks for real-time processing
+                mediaRecorder.start(1000);
+                console.log('[Bot] Audio capture started');
+                return { success: true };
+
+            } catch (error) {
+                console.error('[Bot] Failed to start audio capture:', error);
+                return { success: false, error: error.message };
+            }
+        };
+
+        window.stopAudioCapture = () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                mediaRecorder = null;
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+        };
+
+        window.getAudioChunks = () => {
+            const chunks = window.audioChunksBuffer || [];
+            window.audioChunksBuffer = [];
+            return chunks;
         };
 
         // Leave meeting
