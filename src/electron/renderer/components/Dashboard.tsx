@@ -73,9 +73,13 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected }) => {
     }
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
   return (
     <div className="flex items-center justify-between">
-      {/* Left: Status indicator */}
+      {/* Left: Status indicators */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">
           <div
@@ -88,9 +92,31 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected }) => {
           </span>
         </div>
 
-        {isSessionActive && (
-          <div className="text-white text-sm">
-            <span className="text-blue-400">●</span> Session Active
+        {zoomValid !== null && (
+          <div className="flex items-center gap-2">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                zoomValid ? 'bg-green-400' : 'bg-yellow-400'
+              }`}
+            />
+            <span className="text-white text-xs">
+              Zoom {zoomValid ? '✓' : '⚠'}
+            </span>
+          </div>
+        )}
+
+        {isSessionActive && sessionData && (
+          <div className="text-white text-xs">
+            <span className="text-blue-400">●</span> Session {sessionData.session_id}
+            {sessionData.meeting_id && (
+              <button
+                onClick={() => copyToClipboard(sessionData.join_url || '')}
+                className="ml-2 text-blue-300 hover:text-blue-100 underline"
+                title="Copy Zoom URL"
+              >
+                Copy URL
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -105,10 +131,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isConnected }) => {
         {!isSessionActive ? (
           <button
             onClick={handleStartSession}
-            disabled={!isConnected}
-            className="px-4 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 text-white text-sm rounded-md transition-colors font-medium"
+            disabled={!isConnected || isCreating || zoomValid === false}
+            className="px-4 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-gray-500 disabled:cursor-not-allowed text-white text-sm rounded-md transition-colors font-medium"
+            title={zoomValid === false ? 'Zoom credentials not configured' : 'Start new session'}
           >
-            Start Session
+            {isCreating ? 'Creating...' : 'Start Session'}
           </button>
         ) : (
           <button

@@ -1,150 +1,91 @@
 # AI Professor Clone Breakout Room System
 
-An educational tool that automates Zoom breakout rooms with HeyGen AI clones of professors, enabling personalized 1-on-1 student support at scale.
+> Automated Zoom breakout rooms with HeyGen AI professor clones for personalized student support
 
-## Features
+[![Phase 1](https://img.shields.io/badge/Phase%201-Complete-success)]()
+[![Phase 2](https://img.shields.io/badge/Phase%202-Complete-success)]()
+[![Phase 3](https://img.shields.io/badge/Phase%203-Pending-yellow)]()
 
-- **Automated Breakout Rooms**: Automatically create and manage Zoom breakout rooms
-- **AI Professor Clones**: HeyGen avatars join each room to help students
-- **Real-Time Transcription**: Deepgram captures all student-bot conversations
-- **Context-Aware AI**: RAG system gives bots access to course materials
-- **Analytics Dashboard**: Track student progress, confusion points, and topic coverage
+## Quick Links
+
+- **[📋 Project Plan](./PLAN.md)** - Complete project roadmap and status
+- **[🚀 Quick Start Guide](./docs/QUICKSTART.md)** - Get started in 5 minutes
+- **[📚 Full Documentation](./docs/README.md)** - Complete documentation
+- **[🔧 Deployment Guide](./docs/DEPLOYMENT.md)** - Deploy to Render
+
+## What is This?
+
+An educational tool that uses AI to provide personalized 1-on-1 support to students at scale. When a professor starts a session:
+
+1. **Automatic Breakout Rooms** - Creates Zoom breakout rooms for each student
+2. **AI Professor Clones** - HeyGen avatars join each room to help students
+3. **Smart Conversations** - Real-time transcription and context-aware responses
+4. **Analytics Dashboard** - Track confusion points and student progress
 
 ## Architecture
 
-- **Frontend**: Electron app with minimal "frosted glass" UI (Cluely-style)
-- **Backend**: Python FastAPI orchestrating Zoom, HeyGen, and Deepgram APIs
-- **Database**: SQLite for session data and analytics
-- **Communication**: WebSocket for real-time frontend ↔ backend messaging
+```
+Electron UI (Top Bar) ←→ WebSocket ←→ Python Backend (Render)
+                                            ├─ Zoom API
+                                            ├─ HeyGen API
+                                            ├─ Deepgram API
+                                            └─ SQLite DB
+```
 
-## Setup
+## Current Status
 
-### Prerequisites
+✅ **Phase 1 Complete** - Foundation built
+- Electron frontend with frosted glass UI
+- Python FastAPI backend
+- WebSocket communication
+- SQLite database
 
-- Node.js 18+ and npm
-- Python 3.11+
-- Zoom API credentials (OAuth app or Server-to-Server OAuth)
-- HeyGen API access (Interactive Avatar feature)
-- Deepgram API key
+✅ **Phase 2 Complete** - Zoom Integration
+- Zoom API adapter
+- Meeting and breakout room creation
+- SessionOrchestrator service
 
-### Installation
+🔄 **Next: Phase 3** - HeyGen Avatar Integration
 
-1. **Install frontend dependencies:**
-   ```bash
-   npm install
-   ```
+See **[PLAN.md](./PLAN.md)** for full roadmap.
 
-2. **Install backend dependencies:**
-   ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment variables:**
-   ```bash
-   cd backend
-   cp .env.example .env
-   # Edit .env with your API credentials
-   ```
-
-4. **Initialize database:**
-   ```bash
-   cd backend
-   python -m scripts.init_db
-   ```
-
-### Development
-
-Run both Electron frontend and Python backend simultaneously:
+## Quick Start
 
 ```bash
+# 1. Install dependencies
+npm install
+cd backend && pip install -r requirements.txt
+
+# 2. Configure environment
+cd backend
+cp .env.example .env
+# Add your API keys to .env
+
+# 3. Initialize database
+python scripts/init_db.py
+python scripts/seed_data.py
+
+# 4. Run the app
 npm run dev
 ```
 
-Or run them separately:
+See [docs/QUICKSTART.md](./docs/QUICKSTART.md) for detailed setup instructions.
 
-```bash
-# Terminal 1: Backend
-npm run dev:backend
+## Tech Stack
 
-# Terminal 2: Frontend
-npm run dev:electron
-```
+- **Frontend**: Electron, React, TypeScript, Tailwind CSS
+- **Backend**: Python 3.11+, FastAPI, SQLAlchemy
+- **Database**: SQLite (development), PostgreSQL (production)
+- **APIs**: Zoom, HeyGen, Deepgram
+- **Deployment**: Render (backend), Electron packaged app (frontend)
 
-### Build
+## Documentation
 
-```bash
-npm run build
-npm run build:electron
-```
-
-## Project Structure
-
-```
-.
-├── src/
-│   └── electron/
-│       ├── main/              # Electron main process
-│       │   ├── index.ts       # Entry point
-│       │   ├── websocket-client.ts
-│       │   └── preload.ts     # Context bridge
-│       └── renderer/          # Electron renderer (React UI)
-│           ├── components/    # React components
-│           ├── services/      # API clients
-│           └── store/         # State management
-├── backend/
-│   ├── app.py                 # FastAPI entry point
-│   ├── services/              # Core services
-│   │   ├── session_orchestrator.py
-│   │   ├── zoom_manager.py
-│   │   ├── heygen_controller.py
-│   │   ├── transcription_service.py
-│   │   ├── context_engine.py
-│   │   └── analytics_generator.py
-│   ├── models/                # Database models
-│   ├── integrations/          # API adapters
-│   └── tests/                 # Backend tests
-└── package.json
-```
-
-## Usage
-
-1. **Start the application**: `npm run dev`
-2. **Configure session**: Click settings to upload course materials
-3. **Start breakout session**: Click "Start Session" button
-4. **Monitor rooms**: View real-time status of all breakout rooms
-5. **End session**: Click "End Session" to close rooms and generate analytics
-6. **Review analytics**: View student progress, confusion points, and recommendations
-
-## API Integration
-
-### Zoom API
-- Create meetings and breakout rooms
-- Assign participants to rooms
-- Capture audio streams for transcription
-
-### HeyGen API
-- Create Interactive Avatar sessions
-- Configure avatar with professor profile
-- Join Zoom rooms as participants
-
-### Deepgram API
-- Real-time audio transcription via WebSocket
-- Speaker diarization (student vs bot)
-- High-accuracy transcripts for analytics
-
-## Testing
-
-```bash
-# Backend tests
-cd backend
-pytest
-
-# Frontend tests
-npm test
-```
+- [PLAN.md](./PLAN.md) - Project roadmap and status
+- [docs/QUICKSTART.md](./docs/QUICKSTART.md) - Quick start guide
+- [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) - Deployment instructions
+- [docs/API.md](./docs/API.md) - API documentation
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) - System architecture
 
 ## License
 

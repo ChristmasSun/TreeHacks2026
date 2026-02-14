@@ -1,0 +1,48 @@
+services:
+  # Python FastAPI Backend
+  - type: web
+    name: ai-professor-backend
+    env: python
+    region: oregon
+    plan: free  # Change to 'starter' for production
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+
+    envVars:
+      # Database connection (automatically populated from database service)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-professor-db
+          property: connectionString
+
+      # Zoom API credentials (set these in Render dashboard)
+      - key: ZOOM_ACCOUNT_ID
+        sync: false
+      - key: ZOOM_CLIENT_ID
+        sync: false
+      - key: ZOOM_CLIENT_SECRET
+        sync: false
+
+      # HeyGen API credentials
+      - key: HEYGEN_API_KEY
+        sync: false
+
+      # Deepgram API credentials
+      - key: DEEPGRAM_API_KEY
+        sync: false
+
+      # Application settings
+      - key: DEBUG
+        value: False
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PYTHONUNBUFFERED
+        value: true
+
+databases:
+  # PostgreSQL Database
+  - name: ai-professor-db
+    databaseName: breakout_system
+    plan: free  # Change to 'starter' for production
+    region: oregon

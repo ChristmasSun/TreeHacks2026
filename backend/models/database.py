@@ -10,7 +10,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Database URL - automatically switches between SQLite (dev) and PostgreSQL (prod)
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./breakout_system.db")
+
+# Render provides postgres:// URLs, but SQLAlchemy needs postgresql://
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
 
 # Async engine for FastAPI
 async_engine = create_async_engine(

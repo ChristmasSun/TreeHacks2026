@@ -7,6 +7,8 @@ python-multipart==0.0.6
 # Database
 sqlalchemy==2.0.25
 aiosqlite==0.19.0
+asyncpg==0.29.0  # PostgreSQL async driver for production
+psycopg2-binary==2.9.9  # PostgreSQL driver
 
 # Zoom SDK/API
 zoomus==1.1.7
