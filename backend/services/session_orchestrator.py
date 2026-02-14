@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from models.models import Session, Professor, Student, BreakoutRoom
 from services.zoom_manager import ZoomManager
+from services.heygen_controller import HeyGenController
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +19,19 @@ class SessionOrchestrator:
     """
     Orchestrates the entire breakout session lifecycle:
     1. Create Zoom meeting with breakout rooms
-    2. Deploy HeyGen avatars (future phase)
-    3. Start transcription streams (future phase)
+    2. Deploy HeyGen avatars
+    3. Start transcription streams (Phase 4)
     4. Monitor session health
     5. Generate analytics on completion
     """
 
-    def __init__(self, zoom_manager: Optional[ZoomManager] = None):
+    def __init__(
+        self,
+        zoom_manager: Optional[ZoomManager] = None,
+        heygen_controller: Optional[HeyGenController] = None
+    ):
         self.zoom_manager = zoom_manager or ZoomManager()
+        self.heygen_controller = heygen_controller or HeyGenController()
 
     async def create_breakout_session(
         self,
@@ -112,9 +118,49 @@ class SessionOrchestrator:
             await db.commit()
             await db.refresh(session)
 
+            # Refresh breakout rooms to get IDs
+            for room in breakout_rooms:
+                await db.refresh(room)
+
             logger.info(f"Session {session.id} created successfully")
 
-            # Step 5: TODO - Deploy HeyGen avatars (Phase 3)
+            # Step 5: Deploy HeyGen avatars to breakout rooms
+            avatar_deployment_result = None
+            try:
+                # Build students map for avatar deployment
+                students_map = {s.id: s for s in students}
+
+                # Deploy avatars in parallel
+                avatar_deployment_result = await self.heygen_controller.deploy_avatars_to_rooms(
+                    rooms=breakout_rooms,
+                    professor=professor,
+                    students_map=students_map,
+                    context=configuration.get("course_context") if configuration else None
+                )
+
+                # Update breakout room records with avatar session IDs
+                for deployment in avatar_deployment_result.get("deployments", []):
+                    room_id = deployment.get("room_id")
+                    session_id = deployment.get("session_id")
+
+                    if room_id and session_id:
+                        for room in breakout_rooms:
+                            if room.id == room_id:
+                                room.avatar_session_id = session_id
+                                room.status = "active"
+                                break
+
+                await db.commit()
+
+                logger.info(
+                    f"Avatar deployment: {avatar_deployment_result.get('successful', 0)} "
+                    f"successful, {avatar_deployment_result.get('failed', 0)} failed"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to deploy avatars: {e}")
+                # Continue anyway - session still usable without avatars
+
             # Step 6: TODO - Start transcription streams (Phase 4)
 
             return {
@@ -131,11 +177,17 @@ class SessionOrchestrator:
                         "zoom_room_id": room.zoom_room_id,
                         "student_id": room.student_id,
                         "student_name": students[idx].name if idx < len(students) else "Unknown",
+                        "avatar_session_id": room.avatar_session_id,
                         "status": room.status
                     }
                     for idx, room in enumerate(breakout_rooms)
                 ],
-                "message": "Session created successfully. HeyGen avatars will be deployed next."
+                "avatars": {
+                    "deployed": avatar_deployment_result.get("successful", 0) if avatar_deployment_result else 0,
+                    "failed": avatar_deployment_result.get("failed", 0) if avatar_deployment_result else 0,
+                    "total": len(breakout_rooms)
+                } if avatar_deployment_result else None,
+                "message": f"Session created successfully. Avatars deployed: {avatar_deployment_result.get('successful', 0)}/{len(breakout_rooms)}" if avatar_deployment_result else "Session created successfully."
             }
 
         except Exception as e:
@@ -168,15 +220,24 @@ class SessionOrchestrator:
             session.status = "completed"
             session.end_time = datetime.utcnow()
 
-            # TODO: Close transcription streams (Phase 4)
-            # TODO: Disconnect HeyGen avatars (Phase 3)
-
-            # Update breakout room statuses
+            # Get breakout rooms
             result = await db.execute(
                 select(BreakoutRoom).where(BreakoutRoom.session_id == session_id)
             )
             rooms = result.scalars().all()
 
+            # Disconnect HeyGen avatars
+            room_ids = [room.id for room in rooms]
+            avatar_cleanup_result = await self.heygen_controller.stop_all_avatars(room_ids)
+
+            logger.info(
+                f"Avatar cleanup: {avatar_cleanup_result.get('stopped', 0)} stopped, "
+                f"{avatar_cleanup_result.get('failed', 0)} failed"
+            )
+
+            # TODO: Close transcription streams (Phase 4)
+
+            # Update breakout room statuses
             for room in rooms:
                 room.status = "completed"
 
@@ -190,7 +251,8 @@ class SessionOrchestrator:
                 "session_id": session_id,
                 "status": "completed",
                 "total_rooms": len(rooms),
-                "message": "Session ended successfully. Analytics will be generated."
+                "avatars_stopped": avatar_cleanup_result.get("stopped", 0),
+                "message": f"Session ended successfully. {avatar_cleanup_result.get('stopped', 0)} avatars disconnected."
             }
 
         except Exception as e:
@@ -282,3 +344,9 @@ class SessionOrchestrator:
         Validate Zoom API connection
         """
         return await self.zoom_manager.validate_connection()
+
+    async def validate_heygen_connection(self) -> bool:
+        """
+        Validate HeyGen API connection
+        """
+        return await self.heygen_controller.validate_connection()
