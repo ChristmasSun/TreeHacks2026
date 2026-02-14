@@ -1,36 +1,75 @@
 /**
  * Dashboard component - main control panel
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface DashboardProps {
   isConnected: boolean;
 }
 
+interface SessionData {
+  session_id?: number;
+  meeting_id?: string;
+  join_url?: string;
+  status?: string;
+}
+
 const Dashboard: React.FC<DashboardProps> = ({ isConnected }) => {
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [zoomValid, setZoomValid] = useState<boolean | null>(null);
 
-  const handleStartSession = () => {
+  useEffect(() => {
+    // Listen for backend messages
     if (window.electronAPI) {
-      window.electronAPI.sendToBackend('CREATE_SESSION', {
-        professor_id: 1,
-        meeting_id: 'test-meeting-123',
-        student_ids: [1, 2, 3],
-        configuration: {
-          duration: 20,
-          topic: 'Recursion'
+      window.electronAPI.onBackendMessage((message: any) => {
+        console.log('Dashboard received:', message);
+
+        if (message.type === 'SESSION_CREATED') {
+          setSessionData(message.payload);
+          setIsSessionActive(true);
+          setIsCreating(false);
+
+          // Show meeting URL if available
+          if (message.payload.join_url) {
+            console.log('Zoom Meeting URL:', message.payload.join_url);
+          }
+        } else if (message.type === 'SESSION_ENDED') {
+          setIsSessionActive(false);
+          setSessionData(null);
+        } else if (message.type === 'ZOOM_VALIDATION') {
+          setZoomValid(message.payload.valid);
         }
       });
-      setIsSessionActive(true);
+
+      // Validate Zoom credentials on mount
+      window.electronAPI.sendToBackend('VALIDATE_ZOOM', {});
+    }
+  }, []);
+
+  const handleStartSession = () => {
+    if (window.electronAPI && !isCreating) {
+      setIsCreating(true);
+
+      window.electronAPI.sendToBackend('CREATE_SESSION', {
+        professor_id: 1,
+        student_ids: [1, 2, 3, 4, 5],
+        topic: 'Introduction to Recursion',
+        duration: 20,
+        configuration: {
+          subject: 'Computer Science',
+          difficulty: 'intermediate'
+        }
+      });
     }
   };
 
   const handleEndSession = () => {
-    if (window.electronAPI) {
+    if (window.electronAPI && sessionData?.session_id) {
       window.electronAPI.sendToBackend('END_SESSION', {
-        session_id: 1
+        session_id: sessionData.session_id
       });
-      setIsSessionActive(false);
     }
   };
 

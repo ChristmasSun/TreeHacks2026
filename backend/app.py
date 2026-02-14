@@ -11,6 +11,7 @@ from datetime import datetime
 
 from models import get_db, init_db
 from models.models import Professor, Student, Session, BreakoutRoom
+from services.session_orchestrator import SessionOrchestrator
 
 # Configure logging
 logging.basicConfig(
@@ -141,6 +142,7 @@ async def handle_message(message_type: str, payload: dict, db: AsyncSession) -> 
         "END_SESSION": handle_end_session,
         "GET_SESSION_STATUS": handle_get_session_status,
         "GET_STUDENTS": handle_get_students,
+        "VALIDATE_ZOOM": handle_validate_zoom,
     }
 
     handler = handlers.get(message_type)
@@ -169,37 +171,36 @@ async def handle_create_session(payload: dict, db: AsyncSession) -> dict:
     Payload:
     {
         "professor_id": int,
-        "meeting_id": str,
         "student_ids": [int],
+        "topic": str,
+        "duration": int,
         "configuration": {...}
     }
     """
     try:
-        # Create session record
-        new_session = Session(
+        orchestrator = SessionOrchestrator()
+
+        # Create session with Zoom meeting and breakout rooms
+        result = await orchestrator.create_breakout_session(
+            db=db,
             professor_id=payload["professor_id"],
-            meeting_id=payload["meeting_id"],
-            status="initializing",
+            student_ids=payload["student_ids"],
+            topic=payload.get("topic", "Breakout Session"),
+            duration=payload.get("duration", 20),
             configuration=payload.get("configuration", {})
         )
-        db.add(new_session)
-        await db.commit()
-        await db.refresh(new_session)
 
-        logger.info(f"Session created: {new_session.id}")
+        logger.info(f"Session created: {result['session_id']}")
 
-        # TODO: Trigger session orchestrator to:
-        # 1. Create Zoom breakout rooms
-        # 2. Deploy HeyGen avatars
-        # 3. Start transcription streams
+        # Broadcast to all connected clients
+        await manager.broadcast({
+            "type": "SESSION_CREATED",
+            "payload": result
+        })
 
         return {
             "type": "SESSION_CREATED",
-            "payload": {
-                "session_id": new_session.id,
-                "status": "initializing",
-                "message": "Session created successfully"
-            }
+            "payload": result
         }
     except Exception as e:
         logger.error(f"Error creating session: {e}")
@@ -212,34 +213,24 @@ async def handle_create_session(payload: dict, db: AsyncSession) -> dict:
 async def handle_end_session(payload: dict, db: AsyncSession) -> dict:
     """Handle session end request"""
     try:
+        orchestrator = SessionOrchestrator()
         session_id = payload["session_id"]
 
-        # Update session status
-        session = await db.get(Session, session_id)
-        if session:
-            session.status = "completed"
-            session.end_time = datetime.utcnow()
-            await db.commit()
+        # End session and cleanup
+        result = await orchestrator.end_session(db=db, session_id=session_id)
 
-            logger.info(f"Session ended: {session_id}")
+        logger.info(f"Session ended: {session_id}")
 
-            # TODO: Trigger cleanup:
-            # 1. Close transcription streams
-            # 2. Disconnect HeyGen avatars
-            # 3. Generate analytics
+        # Broadcast to all connected clients
+        await manager.broadcast({
+            "type": "SESSION_ENDED",
+            "payload": result
+        })
 
-            return {
-                "type": "SESSION_ENDED",
-                "payload": {
-                    "session_id": session_id,
-                    "message": "Session ended successfully"
-                }
-            }
-        else:
-            return {
-                "type": "ERROR",
-                "payload": {"message": "Session not found"}
-            }
+        return {
+            "type": "SESSION_ENDED",
+            "payload": result
+        }
     except Exception as e:
         logger.error(f"Error ending session: {e}")
         return {
@@ -251,24 +242,16 @@ async def handle_end_session(payload: dict, db: AsyncSession) -> dict:
 async def handle_get_session_status(payload: dict, db: AsyncSession) -> dict:
     """Get current session status"""
     try:
+        orchestrator = SessionOrchestrator()
         session_id = payload["session_id"]
-        session = await db.get(Session, session_id)
 
-        if session:
-            return {
-                "type": "SESSION_STATUS",
-                "payload": {
-                    "session_id": session.id,
-                    "status": session.status,
-                    "start_time": session.start_time.isoformat() if session.start_time else None,
-                    "end_time": session.end_time.isoformat() if session.end_time else None
-                }
-            }
-        else:
-            return {
-                "type": "ERROR",
-                "payload": {"message": "Session not found"}
-            }
+        # Get detailed session status
+        result = await orchestrator.get_session_status(db=db, session_id=session_id)
+
+        return {
+            "type": "SESSION_STATUS",
+            "payload": result
+        }
     except Exception as e:
         logger.error(f"Error getting session status: {e}")
         return {
@@ -302,6 +285,27 @@ async def handle_get_students(payload: dict, db: AsyncSession) -> dict:
         return {
             "type": "ERROR",
             "payload": {"message": f"Failed to get students: {str(e)}"}
+        }
+
+
+async def handle_validate_zoom(payload: dict, db: AsyncSession) -> dict:
+    """Validate Zoom API credentials"""
+    try:
+        orchestrator = SessionOrchestrator()
+        is_valid = await orchestrator.validate_zoom_connection()
+
+        return {
+            "type": "ZOOM_VALIDATION",
+            "payload": {
+                "valid": is_valid,
+                "message": "Zoom credentials are valid" if is_valid else "Zoom credentials are invalid"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error validating Zoom: {e}")
+        return {
+            "type": "ERROR",
+            "payload": {"message": f"Failed to validate Zoom: {str(e)}"}
         }
 
 
