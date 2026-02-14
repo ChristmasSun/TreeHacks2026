@@ -2,7 +2,7 @@
   "name": "ai-professor-breakout-system",
   "version": "1.0.0",
   "description": "AI-powered breakout room system with HeyGen professor clones",
-  "main": "dist/electron/main/index.js",
+  "main": "out/main/index.js",
   "scripts": {
     "dev": "concurrently \"npm run dev:electron\" \"npm run dev:backend\"",
     "dev:electron": "electron-vite dev",
@@ -14,6 +14,8 @@
     "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {
+    "@heygen/streaming-avatar": "^2.1.0",
+    "livekit-client": "^2.1.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "ws": "^8.16.0",

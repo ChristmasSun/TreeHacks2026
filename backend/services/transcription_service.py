@@ -11,7 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from models.models import Transcript, BreakoutRoom
-from integrations.deepgram_adapter import DeepgramAdapter, create_deepgram_adapter
+
+# Make deepgram optional (requires Python 3.10+)
+try:
+    from integrations.deepgram_adapter import DeepgramAdapter, create_deepgram_adapter
+    DEEPGRAM_AVAILABLE = True
+except (ImportError, SyntaxError):
+    DeepgramAdapter = None
+    create_deepgram_adapter = None
+    DEEPGRAM_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +49,7 @@ class TranscriptionService:
             on_transcript_callback: Callback for real-time transcript forwarding
         """
         # Active transcription adapters per room
-        self.active_streams: Dict[int, DeepgramAdapter] = {}
+        self.active_streams: Dict[int, Any] = {}  # DeepgramAdapter when available
 
         # Deepgram API key
         self.deepgram_api_key = deepgram_api_key
@@ -49,6 +57,9 @@ class TranscriptionService:
         # Callback for real-time transcript forwarding (to WebSocket)
         self.on_transcript_callback = on_transcript_callback
 
+        if not DEEPGRAM_AVAILABLE:
+            logger.warning("Deepgram not available (requires Python 3.10+). Transcription disabled.")
+        
         logger.info("TranscriptionService initialized")
 
     async def start_room_transcription(
@@ -72,6 +83,10 @@ class TranscriptionService:
         Returns:
             True if transcription started successfully
         """
+        if not DEEPGRAM_AVAILABLE:
+            logger.warning(f"Deepgram not available, transcription disabled for room {room_id}")
+            return False
+            
         try:
             # Check if room exists
             room = await db.get(BreakoutRoom, room_id)

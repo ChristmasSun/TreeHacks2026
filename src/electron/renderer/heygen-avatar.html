@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Tutor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #000;
+      color: white;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      padding: 12px 16px;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .header h1 { font-size: 14px; font-weight: 500; opacity: 0.8; }
+    .close-btn {
+      background: none;
+      border: none;
+      color: white;
+      opacity: 0.6;
+      cursor: pointer;
+      font-size: 20px;
+      padding: 4px 8px;
+    }
+    .close-btn:hover { opacity: 1; }
+    .main {
+      flex: 1;
+      display: flex;
+      gap: 16px;
+      padding: 16px;
+      overflow: hidden;
+    }
+    .video-container {
+      flex: 1;
+      background: #111;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+      min-height: 300px;
+    }
+    #avatar-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .loading, .error {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #111;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(59, 130, 246, 0.3);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading p, .error p { margin-top: 12px; opacity: 0.7; font-size: 14px; }
+    .error { color: #f87171; }
+    .retry-btn {
+      margin-top: 16px;
+      padding: 8px 16px;
+      background: #3b82f6;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+    }
+    .chat {
+      width: 300px;
+      display: flex;
+      flex-direction: column;
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+    .message {
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      max-width: 85%;
+      font-size: 14px;
+    }
+    .message.student {
+      background: #3b82f6;
+      margin-left: auto;
+    }
+    .message.avatar {
+      background: #374151;
+    }
+    .input-area {
+      padding: 12px;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      display: flex;
+      gap: 8px;
+    }
+    .input-area input {
+      flex: 1;
+      background: #1f2937;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 8px 12px;
+      color: white;
+      font-size: 14px;
+    }
+    .input-area input:focus { outline: none; border-color: #3b82f6; }
+    .input-area button {
+      padding: 8px 16px;
+      background: #3b82f6;
+      border: none;
+      border-radius: 8px;
+      color: white;
+      cursor: pointer;
+    }
+    .input-area button:disabled { background: #374151; cursor: not-allowed; }
+    .hidden { display: none !important; }
+    .speaking-indicator {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(0,0,0,0.6);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .speaking-dots {
+      display: flex;
+      gap: 3px;
+    }
+    .speaking-dots span {
+      width: 6px;
+      height: 6px;
+      background: #3b82f6;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+    .speaking-dots span:nth-child(2) { animation-delay: 0.1s; }
+    .speaking-dots span:nth-child(3) { animation-delay: 0.2s; }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AI Tutor &bull; <span id="student-name">Student</span></h1>
+    <button class="close-btn" onclick="closeWindow()">&times;</button>
+  </div>
+  
+  <div class="main">
+    <div class="video-container">
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Starting AI Tutor...</p>
+      </div>
+      <div class="error hidden" id="error">
+        <p>Connection Error</p>
+        <p id="error-msg"></p>
+        <button class="retry-btn" onclick="startAvatar()">Retry</button>
+      </div>
+      <video id="avatar-video" autoplay playsinline></video>
+      <div class="speaking-indicator hidden" id="speaking">
+        <div class="speaking-dots">
+          <span></span><span></span><span></span>
+        </div>
+        <span>Speaking...</span>
+      </div>
+    </div>
+    
+    <div class="chat">
+      <div class="messages" id="messages"></div>
+      <div class="input-area">
+        <input type="text" id="input" placeholder="Ask a question..." disabled>
+        <button id="send-btn" onclick="sendMessage()" disabled>Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import StreamingAvatar, { AvatarQuality, StreamingEvents } from 'https://esm.sh/@heygen/streaming-avatar@latest';
+    
+    let avatar = null;
+    let sessionId = null;
+    const params = new URLSearchParams(window.location.search);
+    const studentName = params.get('name') || 'Student';
+    const backendUrl = params.get('backend') || 'http://127.0.0.1:8000';
+    
+    document.getElementById('student-name').textContent = studentName;
+    
+    window.closeWindow = function() {
+      if (avatar) avatar.stopAvatar().catch(() => {});
+      window.close();
+    }
+    
+    function showLoading() {
+      document.getElementById('loading').classList.remove('hidden');
+      document.getElementById('error').classList.add('hidden');
+    }
+    
+    function showError(msg) {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('error').classList.remove('hidden');
+      document.getElementById('error-msg').textContent = msg;
+    }
+    
+    function hideOverlays() {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('error').classList.add('hidden');
+    }
+    
+    function addMessage(role, text) {
+      const div = document.createElement('div');
+      div.className = 'message ' + role;
+      div.textContent = text;
+      document.getElementById('messages').appendChild(div);
+      document.getElementById('messages').scrollTop = 9999;
+    }
+    
+    async function fetchToken() {
+      const res = await fetch(backendUrl + '/api/heygen-token');
+      if (!res.ok) throw new Error('Failed to get token');
+      const data = await res.json();
+      return data.token;
+    }
+    
+    window.startAvatar = async function() {
+      showLoading();
+      
+      try {
+        const token = await fetchToken();
+        console.log('Got token');
+        
+        avatar = new StreamingAvatar({ token });
+        
+        avatar.on(StreamingEvents.STREAM_READY, (event) => {
+          console.log('Stream ready');
+          const video = document.getElementById('avatar-video');
+          video.srcObject = event.detail;
+          video.play().catch(console.error);
+          hideOverlays();
+          
+          document.getElementById('input').disabled = false;
+          document.getElementById('send-btn').disabled = false;
+          
+          addMessage('avatar', 'Hello ' + studentName + '! I am your AI tutor. What would you like to learn about?');
+        });
+        
+        avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
+          console.log('Disconnected');
+          showError('Connection lost');
+        });
+        
+        avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
+          document.getElementById('speaking').classList.remove('hidden');
+        });
+        
+        avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
+          document.getElementById('speaking').classList.add('hidden');
+        });
+        
+        const session = await avatar.createStartAvatar({
+          quality: AvatarQuality.Medium,
+          avatarName: 'default',
+        });
+        
+        console.log('Session started:', session);
+        sessionId = session.session_id;
+        
+      } catch (err) {
+        console.error('Error:', err);
+        showError(err.message || 'Failed to connect');
+      }
+    }
+    
+    window.sendMessage = async function() {
+      const input = document.getElementById('input');
+      const text = input.value.trim();
+      if (!text || !avatar) return;
+      
+      input.value = '';
+      addMessage('student', text);
+      
+      try {
+        const response = 'That is a great question about "' + text + '". Let me explain this concept to you...';
+        
+        await avatar.speak({
+          text: response,
+          taskType: 'talk',
+          taskMode: 'sync',
+        });
+        
+        addMessage('avatar', response);
+      } catch (err) {
+        console.error('Speak error:', err);
+      }
+    }
+    
+    document.getElementById('input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') window.sendMessage();
+    });
+    
+    // Start immediately
+    window.startAvatar();
+  </script>
+</body>
+</html>

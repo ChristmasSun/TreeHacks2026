@@ -86,7 +86,7 @@ class Transcript(Base):
     text = Column(Text, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     confidence = Column(Float)  # Transcription confidence score
-    metadata = Column(JSON)  # {keywords, sentiment, intent}
+    extra_data = Column(JSON)  # {keywords, sentiment, intent}
 
     # Relationships
     room = relationship("BreakoutRoom", back_populates="transcripts")
@@ -120,7 +120,7 @@ class ContextDocument(Base):
     file_type = Column(String(50))  # pdf, pptx, md, txt
     content = Column(Text)  # Extracted text content
     embeddings_id = Column(String(255))  # Reference to vector DB collection
-    metadata = Column(JSON)  # {topic_tags, course_id, lecture_number}
+    doc_metadata = Column(JSON)  # {topic_tags, course_id, lecture_number}
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

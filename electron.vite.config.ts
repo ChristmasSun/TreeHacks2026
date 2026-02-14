@@ -24,6 +24,7 @@ export default defineConfig({
     }
   },
   renderer: {
+    root: resolve(__dirname, 'src/electron/renderer'),
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),
@@ -32,10 +33,9 @@ export default defineConfig({
     },
     plugins: [react()],
     build: {
+      outDir: resolve(__dirname, 'out/renderer'),
       rollupOptions: {
-        input: {
-          index: resolve(__dirname, 'src/electron/renderer/index.html')
-        }
+        input: resolve(__dirname, 'src/electron/renderer/index.html')
       }
     }
   }

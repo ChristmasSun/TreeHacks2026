@@ -18,42 +18,49 @@ export class WebSocketClient extends EventEmitter {
   connect() {
     console.log(`Connecting to backend: ${this.url}`);
 
-    this.ws = new WebSocket(this.url);
+    try {
+      this.ws = new WebSocket(this.url);
 
-    this.ws.on('open', () => {
-      console.log('WebSocket connected to backend');
-      this.emit('connected');
+      this.ws.on('open', () => {
+        console.log('WebSocket connected to backend');
+        this.emit('connected');
 
-      // Clear any pending reconnect
-      if (this.reconnectTimeout) {
-        clearTimeout(this.reconnectTimeout);
-        this.reconnectTimeout = null;
-      }
+        // Clear any pending reconnect
+        if (this.reconnectTimeout) {
+          clearTimeout(this.reconnectTimeout);
+          this.reconnectTimeout = null;
+        }
 
-      // Send ping to confirm connection
-      this.send('PING', {});
-    });
+        // Send ping to confirm connection
+        this.send('PING', {});
+      });
 
-    this.ws.on('message', (data: WebSocket.Data) => {
-      try {
-        const message = JSON.parse(data.toString());
-        console.log('Received from backend:', message.type);
-        this.emit('message', message);
-      } catch (error) {
-        console.error('Failed to parse message:', error);
-      }
-    });
+      this.ws.on('message', (data: WebSocket.Data) => {
+        try {
+          const message = JSON.parse(data.toString());
+          console.log('Received from backend:', message.type);
+          this.emit('message', message);
+        } catch (error) {
+          console.error('Failed to parse message:', error);
+        }
+      });
 
-    this.ws.on('close', () => {
-      console.log('WebSocket disconnected');
-      this.emit('disconnected');
+      this.ws.on('close', () => {
+        console.log('WebSocket disconnected');
+        this.emit('disconnected');
+        this.scheduleReconnect();
+      });
+
+      this.ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+        this.emit('error', error);
+        // Schedule reconnect on error
+        this.scheduleReconnect();
+      });
+    } catch (error) {
+      console.error('Failed to create WebSocket:', error);
       this.scheduleReconnect();
-    });
-
-    this.ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
-      this.emit('error', error);
-    });
+    }
   }
 
   disconnect() {

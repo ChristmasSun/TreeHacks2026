@@ -20,7 +20,7 @@ class HeyGenAPIAdapter:
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("HEYGEN_API_KEY")
-        self.base_url = "https://api.heygen.com/v2"
+        self.base_url = "https://api.heygen.com/v1"  # v1 for streaming APIs
         self.streaming_base_url = "https://api.heygen.com/v1/streaming"
 
         if not self.api_key:
@@ -87,8 +87,22 @@ class HeyGenAPIAdapter:
             data["voice_id"] = voice_id
 
         result = await self._make_request("POST", "/streaming.new", data=data)
-        logger.info(f"Created streaming avatar session: {result.get('data', {}).get('session_id')}")
-        return result.get("data", {})
+        session_data = result.get("data", {})
+        
+        # Log full response for debugging
+        logger.info(f"HeyGen streaming.new response: {session_data}")
+        
+        # Normalize field names - HeyGen uses different field names
+        normalized = {
+            "session_id": session_data.get("session_id"),
+            "url": session_data.get("url") or session_data.get("livekit_url") or session_data.get("server_url"),
+            "access_token": session_data.get("access_token") or session_data.get("token"),
+            "ice_servers": session_data.get("ice_servers", []),
+            "ice_servers2": session_data.get("ice_servers2", []),
+        }
+        
+        logger.info(f"Created streaming avatar session: {normalized.get('session_id')}, url: {normalized.get('url')}")
+        return normalized
 
     async def start_avatar_session(
         self,
@@ -116,8 +130,20 @@ class HeyGenAPIAdapter:
             }
 
         result = await self._make_request("POST", "/streaming.start", data=data)
-        logger.info(f"Started avatar session: {session_id}")
-        return result.get("data", {})
+        session_data = result.get("data", {})
+        
+        # Log full response for debugging
+        logger.info(f"HeyGen streaming.start response: {session_data}")
+        
+        # Normalize field names
+        normalized = {
+            "url": session_data.get("url") or session_data.get("livekit_url") or session_data.get("server_url"),
+            "access_token": session_data.get("access_token") or session_data.get("token"),
+            "sdp": session_data.get("sdp"),
+        }
+        
+        logger.info(f"Started avatar session: {session_id}, url: {normalized.get('url')}")
+        return normalized
 
     async def send_message_to_avatar(
         self,

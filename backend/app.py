@@ -3,10 +3,13 @@ FastAPI application with WebSocket support for Electron frontend
 """
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import json
 import logging
+import os
 from datetime import datetime
 
 from models import get_db, init_db
@@ -100,6 +103,39 @@ async def health_check():
     }
 
 
+# Professor Dashboard
+@app.get("/dashboard")
+async def professor_dashboard():
+    """Serve professor dashboard"""
+    dashboard_path = os.path.join(os.path.dirname(__file__), "static", "professor-dashboard.html")
+    return FileResponse(dashboard_path, media_type="text/html")
+
+
+# HeyGen access token endpoint for frontend SDK
+@app.get("/api/heygen-token")
+async def get_heygen_token():
+    """Generate HeyGen access token for frontend SDK"""
+    import httpx
+    import os
+    
+    api_key = os.getenv("HEYGEN_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="HeyGen API key not configured")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.heygen.com/v1/streaming.create_token",
+                headers={"X-Api-Key": api_key}
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {"token": data.get("data", {}).get("token")}
+    except Exception as e:
+        logger.error(f"Failed to get HeyGen token: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # WebSocket endpoint
 @app.websocket("/ws")
 async def websocket_endpoint(
@@ -155,6 +191,10 @@ async def handle_message(message_type: str, payload: dict, db: AsyncSession) -> 
         "GET_ROOM_TRANSCRIPTS": handle_get_room_transcripts,
         "VALIDATE_DEEPGRAM": handle_validate_deepgram,
         "PROCESS_AUDIO": handle_process_audio,
+        # Student client handlers
+        "REGISTER_STUDENT": handle_register_student,
+        "STUDENT_MESSAGE": handle_student_message,
+        "TRIGGER_BREAKOUT": handle_trigger_breakout,
     }
 
     handler = handlers.get(message_type)
@@ -421,6 +461,219 @@ async def handle_process_audio(payload: dict, db: AsyncSession) -> dict:
         }
 
 
+# ============ Student Client Handlers ============
+
+# Store registered students by email for quick lookup
+registered_students: dict = {}  # email -> {name, websocket_id, session_info}
+
+
+async def handle_register_student(payload: dict, db: AsyncSession) -> dict:
+    """
+    Register a student client for breakout room notifications
+
+    Payload:
+    {
+        "name": str,
+        "email": str
+    }
+    """
+    try:
+        name = payload.get("name", "Student")
+        email = payload.get("email", "")
+
+        # Store student registration
+        registered_students[email] = {
+            "name": name,
+            "email": email,
+            "registered_at": datetime.utcnow().isoformat(),
+            "avatar_session": None
+        }
+
+        logger.info(f"Student registered: {name} ({email})")
+
+        return {
+            "type": "STUDENT_REGISTERED",
+            "payload": {
+                "name": name,
+                "email": email,
+                "message": "Successfully registered for AI tutoring"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error registering student: {e}")
+        return {
+            "type": "ERROR",
+            "payload": {"message": f"Failed to register: {str(e)}"}
+        }
+
+
+async def handle_student_message(payload: dict, db: AsyncSession) -> dict:
+    """
+    Handle a message from student to avatar
+
+    Payload:
+    {
+        "sessionId": str,
+        "studentName": str,
+        "message": str
+    }
+    """
+    try:
+        session_id = payload.get("sessionId")
+        student_name = payload.get("studentName")
+        message = payload.get("message")
+
+        logger.info(f"Student message from {student_name}: {message}")
+
+        # TODO: Send to HeyGen avatar for response
+        # For now, simulate a response
+        
+        # In production, this would call HeyGen streaming.task API
+        # and the avatar response would be sent via AVATAR_RESPONSE message
+        
+        return {
+            "type": "MESSAGE_RECEIVED",
+            "payload": {
+                "sessionId": session_id,
+                "status": "processing"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error handling student message: {e}")
+        return {
+            "type": "ERROR",
+            "payload": {"message": f"Failed to send message: {str(e)}"}
+        }
+
+
+async def handle_trigger_breakout(payload: dict, db: AsyncSession) -> dict:
+    """
+    Manually trigger breakout room activation for all registered students
+    (Used for testing or when professor triggers from their dashboard)
+
+    Payload:
+    {
+        "session_id": int (optional),
+        "meeting_id": str (optional)
+    }
+    """
+    try:
+        from integrations.heygen_api_adapter import HeyGenAPIAdapter
+        
+        heygen = HeyGenAPIAdapter()
+        
+        # Create HeyGen sessions for all registered students
+        results = []
+        for email, student_info in registered_students.items():
+            try:
+                # Create a HeyGen avatar session for this student
+                # If no API key, use mock session for demo
+                if not heygen.api_key:
+                    avatar_session = {
+                        "session_id": f"mock-session-{email}",
+                        "url": "wss://mock.livekit.cloud",
+                        "access_token": "mock-token-for-demo"
+                    }
+                    logger.info(f"Using mock avatar session for {email} (no HeyGen API key)")
+                else:
+                    # Create session - streaming.new returns LiveKit credentials directly
+                    # No need to call streaming.start when using LiveKit
+                    avatar_session = await heygen.create_streaming_avatar(
+                        quality="medium"
+                    )
+                    logger.info(f"Created avatar session, LiveKit URL: {avatar_session.get('url')}")
+                
+                if avatar_session:
+                    student_info["avatar_session"] = avatar_session
+                    
+                    results.append({
+                        "email": email,
+                        "name": student_info["name"],
+                        "avatar_session_id": avatar_session.get("session_id"),
+                        "status": "created"
+                    })
+                    
+                    logger.info(f"Created avatar session for {email}")
+            except Exception as e:
+                logger.error(f"Failed to create avatar for {email}: {e}")
+                results.append({
+                    "email": email,
+                    "name": student_info["name"],
+                    "status": "failed",
+                    "error": str(e)
+                })
+
+        # Broadcast breakout event to all clients
+        for email, student_info in registered_students.items():
+            if student_info.get("avatar_session"):
+                avatar = student_info["avatar_session"]
+                await manager.broadcast({
+                    "type": "BREAKOUT_STARTED",
+                    "payload": {
+                        "studentEmail": email,
+                        "studentName": student_info["name"],
+                        "avatarSession": {
+                            "session_id": avatar.get("session_id"),
+                            "livekit_url": avatar.get("url"),
+                            "access_token": avatar.get("access_token")
+                        }
+                    }
+                })
+
+        logger.info(f"Triggered breakout for {len(results)} students")
+
+        return {
+            "type": "BREAKOUT_TRIGGERED",
+            "payload": {
+                "students": results,
+                "count": len(results)
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error triggering breakout: {e}")
+        return {
+            "type": "ERROR",
+            "payload": {"message": f"Failed to trigger breakout: {str(e)}"}
+        }
+
+
+# ============ Zoom Webhook Endpoint ============
+
+@app.post("/webhook/zoom")
+async def zoom_webhook(request_data: dict):
+    """
+    Handle Zoom webhook events (breakout rooms, meeting events, etc.)
+    
+    Events we care about:
+    - meeting.participant_joined_breakout_room
+    - meeting.breakout_room_opened
+    """
+    try:
+        event = request_data.get("event", "")
+        payload = request_data.get("payload", {})
+
+        logger.info(f"Zoom webhook received: {event}")
+
+        if event == "meeting.breakout_room_opened":
+            # Breakout rooms were opened by the host
+            logger.info("Breakout rooms opened! Notifying students...")
+            
+            # Trigger avatar creation and notification
+            await handle_trigger_breakout({}, None)
+
+        elif event == "meeting.participant_joined_breakout_room":
+            # A participant joined a breakout room
+            participant = payload.get("object", {}).get("participant", {})
+            room_name = payload.get("object", {}).get("breakout_room", {}).get("name", "")
+            
+            logger.info(f"Participant {participant.get('user_name')} joined breakout room: {room_name}")
+
+        return {"status": "received"}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
 # REST API endpoints (for non-real-time operations)
 
 @app.get("/api/professors")
@@ -456,6 +709,32 @@ async def get_session(session_id: int, db: AsyncSession = Depends(get_db)):
         "start_time": session.start_time.isoformat() if session.start_time else None,
         "end_time": session.end_time.isoformat() if session.end_time else None,
         "configuration": session.configuration
+    }
+
+
+@app.post("/api/trigger-breakout")
+async def trigger_breakout_api(db: AsyncSession = Depends(get_db)):
+    """
+    REST endpoint to trigger breakout rooms manually (for testing)
+    """
+    result = await handle_trigger_breakout({}, db)
+    return result["payload"]
+
+
+@app.get("/api/registered-students")
+async def get_registered_students():
+    """Get list of currently registered student clients"""
+    return {
+        "students": [
+            {
+                "email": email,
+                "name": info["name"],
+                "registered_at": info["registered_at"],
+                "has_avatar": info.get("avatar_session") is not None
+            }
+            for email, info in registered_students.items()
+        ],
+        "count": len(registered_students)
     }
 
 

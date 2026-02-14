@@ -20,6 +20,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Window controls
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   closeWindow: () => ipcRenderer.send('close-window'),
+  
+  // Window state management
+  setWindowState: (state: 'hidden' | 'minimized' | 'expanded') => {
+    ipcRenderer.send('set-window-state', state);
+  },
+  getWindowState: () => ipcRenderer.invoke('get-window-state'),
+  onWindowStateChanged: (callback: (state: string) => void) => {
+    ipcRenderer.on('window-state-changed', (_event, state) => {
+      callback(state);
+    });
+  },
+  
+  // Student registration (notify main process)
+  studentRegistered: (student: { name: string; email: string }) => {
+    ipcRenderer.send('student-registered', student);
+  },
 });
 
 // TypeScript type definitions for window.electronAPI
@@ -30,6 +46,10 @@ declare global {
       onBackendMessage: (callback: (message: any) => void) => void;
       minimizeWindow: () => void;
       closeWindow: () => void;
+      setWindowState: (state: 'hidden' | 'minimized' | 'expanded') => void;
+      getWindowState: () => Promise<string>;
+      onWindowStateChanged: (callback: (state: string) => void) => void;
+      studentRegistered: (student: { name: string; email: string }) => void;
     };
   }
 }
