@@ -71,6 +71,15 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+# Transcript callback for real-time forwarding to frontend
+async def forward_transcript_to_frontend(transcript_data: dict):
+    """Forward real-time transcripts to all connected frontend clients"""
+    await manager.broadcast({
+        "type": "TRANSCRIPT_UPDATE",
+        "payload": transcript_data
+    })
+
+
 # Startup event
 @app.on_event("startup")
 async def startup_event():

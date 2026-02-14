@@ -11,6 +11,7 @@ from sqlalchemy import select
 from models.models import Session, Professor, Student, BreakoutRoom
 from services.zoom_manager import ZoomManager
 from services.heygen_controller import HeyGenController
+from services.transcription_service import get_transcription_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,14 @@ class SessionOrchestrator:
     def __init__(
         self,
         zoom_manager: Optional[ZoomManager] = None,
-        heygen_controller: Optional[HeyGenController] = None
+        heygen_controller: Optional[HeyGenController] = None,
+        on_transcript_callback: Optional[Any] = None
     ):
         self.zoom_manager = zoom_manager or ZoomManager()
         self.heygen_controller = heygen_controller or HeyGenController()
+        self.transcription_service = get_transcription_service(
+            on_transcript_callback=on_transcript_callback
+        )
 
     async def create_breakout_session(
         self,
@@ -161,7 +166,25 @@ class SessionOrchestrator:
                 logger.error(f"Failed to deploy avatars: {e}")
                 # Continue anyway - session still usable without avatars
 
-            # Step 6: TODO - Start transcription streams (Phase 4)
+            # Step 6: Start transcription streams (Phase 4)
+            # Transcription integrates with HeyGen avatar audio streams
+            transcription_results = []
+            for room in breakout_rooms:
+                try:
+                    success = await self.transcription_service.start_room_transcription(
+                        db=db,
+                        room_id=room.id,
+                        language="en-US"  # TODO: Make configurable per session
+                    )
+                    if success:
+                        logger.info(f"Started transcription for room {room.id}")
+                        transcription_results.append({"room_id": room.id, "status": "started"})
+                    else:
+                        logger.warning(f"Failed to start transcription for room {room.id}")
+                        transcription_results.append({"room_id": room.id, "status": "failed"})
+                except Exception as e:
+                    logger.error(f"Error starting transcription for room {room.id}: {e}")
+                    transcription_results.append({"room_id": room.id, "status": "error", "error": str(e)})
 
             return {
                 "session_id": session.id,
@@ -235,7 +258,9 @@ class SessionOrchestrator:
                 f"{avatar_cleanup_result.get('failed', 0)} failed"
             )
 
-            # TODO: Close transcription streams (Phase 4)
+            # Close transcription streams (Phase 4)
+            await self.transcription_service.stop_all_transcriptions()
+            logger.info(f"Stopped all transcriptions for session {session_id}")
 
             # Update breakout room statuses
             for room in rooms:
@@ -350,3 +375,53 @@ class SessionOrchestrator:
         Validate HeyGen API connection
         """
         return await self.heygen_controller.validate_connection()
+
+    async def validate_transcription_service(self) -> bool:
+        """
+        Validate transcription service (Deepgram) connection
+        """
+        return await self.transcription_service.validate_service()
+
+    async def process_audio_for_room(
+        self,
+        room_id: int,
+        audio_data: bytes
+    ) -> bool:
+        """
+        Process audio chunk for a specific room from HeyGen audio pipeline
+        This receives audio from HeyGen avatars and feeds it to Deepgram
+
+        Args:
+            room_id: Breakout room ID
+            audio_data: Raw PCM audio (linear16, 16kHz, mono)
+
+        Returns:
+            True if audio processed successfully
+        """
+        return await self.transcription_service.process_audio_chunk(
+            room_id=room_id,
+            audio_data=audio_data
+        )
+
+    async def get_room_transcripts(
+        self,
+        db: AsyncSession,
+        room_id: int,
+        limit: int = 100
+    ) -> list:
+        """
+        Get transcripts for a specific breakout room
+
+        Args:
+            db: Database session
+            room_id: Breakout room ID
+            limit: Maximum number of transcripts
+
+        Returns:
+            List of transcript dictionaries
+        """
+        return await self.transcription_service.get_room_transcripts(
+            db=db,
+            room_id=room_id,
+            limit=limit
+        )
