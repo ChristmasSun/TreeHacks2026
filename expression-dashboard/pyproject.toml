@@ -1,0 +1,15 @@
+[project]
+name = "expression-dashboard"
+version = "0.1.0"
+description = "Facial expression analysis dashboard for Zoom meetings"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "fer>=22.5.1",
+    "setuptools<81",
+    "opencv-python-headless>=4.10.0",
+    "pillow>=11.0.0",
+    "numpy>=2.0.0",
+    "python-multipart>=0.0.18",
+]
