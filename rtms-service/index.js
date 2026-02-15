@@ -38,6 +38,21 @@ app.get('/health', (req, res) => {
   });
 });
 
+// OAuth redirect handler (for Zoom app authorization)
+app.get('/redirect', (req, res) => {
+  const code = req.query.code;
+  console.log('[OAuth] Authorization code received:', code);
+  res.send(`
+    <html>
+      <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h1>✅ Zoom App Authorized!</h1>
+        <p>You can close this window and start a meeting.</p>
+        <p style="color: gray; font-size: 12px;">Auth code: ${code ? code.substring(0, 10) + '...' : 'none'}</p>
+      </body>
+    </html>
+  `);
+});
+
 // Stats endpoint
 app.get('/stats', (req, res) => {
   const sessions = [];
