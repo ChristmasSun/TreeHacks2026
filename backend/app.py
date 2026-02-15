@@ -1201,6 +1201,7 @@ async def load_quiz_videos(data: dict):
         "output_dir": str (path to pipeline output, e.g., "output" or "/path/to/output")
     }
     """
+    global quiz_video_output_dir
     import shutil
     from pathlib import Path
 
@@ -1237,7 +1238,6 @@ async def load_quiz_videos(data: dict):
             })
 
     # Update global output dir
-    global quiz_video_output_dir
     quiz_video_output_dir = output_dir
 
     logger.info(f"Loaded {len(copied_videos)} videos from {output_dir}")

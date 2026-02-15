@@ -4,14 +4,20 @@ version = "0.1.0"
 description = "Generate 3Blue1Brown-style Manim videos from lecture transcripts"
 requires-python = ">=3.12"
 dependencies = [
+    "aiofiles>=25.1.0",
+    "aiosqlite>=0.22.1",
     "dedalus_labs",
+    "fastapi>=0.129.0",
     "greenlet>=3.3.1",
     "httpx",
     "manim==0.19.2",
     "pocket-tts>=1.0.3",
+    "python-dotenv>=1.2.1",
     "scipy",
     "silero-vad>=6.2.0",
+    "sqlalchemy>=2.0.46",
     "torchaudio>=2.10.0",
     "torchcodec>=0.10.0",
+    "uvicorn>=0.40.0",
     "yt-dlp>=2026.2.4",
 ]
