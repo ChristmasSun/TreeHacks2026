@@ -293,6 +293,35 @@ app.get('/oauth/callback', (req, res) => {
   `);
 });
 
+// Zoom Team Chat Chatbot webhook - forwards to local Python backend
+app.post('/webhook/zoom-chatbot', async (req, res) => {
+  const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+
+  console.log('[Chatbot Webhook] Received:', JSON.stringify(req.body).substring(0, 200));
+
+  try {
+    // Forward the entire request to Python backend
+    const response = await fetch(`${backendUrl}/webhook/zoom-chatbot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // Forward Zoom signature headers for verification
+        'x-zm-signature': req.headers['x-zm-signature'] || '',
+        'x-zm-request-timestamp': req.headers['x-zm-request-timestamp'] || ''
+      },
+      body: JSON.stringify(req.body)
+    });
+
+    const data = await response.json();
+    console.log('[Chatbot Webhook] Backend response:', JSON.stringify(data).substring(0, 200));
+    res.json(data);
+  } catch (error) {
+    console.error('[Chatbot Webhook] Error forwarding to backend:', error.message);
+    // Return success to Zoom to prevent retries, but log the error
+    res.json({ success: true, error: error.message });
+  }
+});
+
 // API endpoint to get accumulated transcripts for a meeting
 app.get('/api/transcripts/:meetingId', (req, res) => {
   const meetingId = req.params.meetingId;
