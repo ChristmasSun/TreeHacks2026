@@ -1,165 +1,338 @@
-# AI Professor Clone Breakout Room System
+# AI Professor - Scalable Personalized Education
 
-> Automated Zoom breakout rooms with HeyGen AI professor clones for personalized student support
+> Transform any lecture into an interactive AI-powered learning experience with avatar tutors, auto-generated quizzes, and 3Blue1Brown-style explainer videos.
 
+[![Built at TreeHacks 2026](https://img.shields.io/badge/Built%20at-TreeHacks%202026-blue)]()
 [![Phase 1](https://img.shields.io/badge/Phase%201-Complete-success)]()
 [![Phase 2](https://img.shields.io/badge/Phase%202-Complete-success)]()
 [![Phase 3](https://img.shields.io/badge/Phase%203-Complete-success)]()
 [![Quiz Bot](https://img.shields.io/badge/Quiz%20Bot-Complete-success)]()
 [![Manim Pipeline](https://img.shields.io/badge/Manim%20Pipeline-Complete-success)]()
 
-## Quick Links
+## The Problem
 
-- **[📋 Project Plan](./PLAN.md)** - Complete project roadmap and status
-- **[🚀 Quick Start Guide](./docs/QUICKSTART.md)** - Get started in 5 minutes
-- **[📚 Full Documentation](./docs/README.md)** - Complete documentation
-- **[🔧 Deployment Guide](./docs/DEPLOYMENT.md)** - Deploy to Render
-- **[🎬 Quiz Integration Guide](./docs/QUIZ_INTEGRATION.md)** - Manim videos + Zoom quizzes
+Professors can't give personalized 1-on-1 attention to hundreds of students. Office hours are limited, and students often struggle with concepts without immediate help.
 
-## What is This?
+## Our Solution
 
-An educational tool that uses AI to provide personalized 1-on-1 support to students at scale. When a professor starts a session:
+An AI-powered professor toolkit that:
+1. **Clones the professor** as an AI avatar that can tutor students individually
+2. **Generates animated explainers** from any lecture (3Blue1Brown style)
+3. **Creates interactive quizzes** delivered via Zoom Team Chat
+4. **Provides real-time analytics** on student understanding
 
-1. **Automatic Breakout Rooms** - Creates Zoom breakout rooms for each student
-2. **AI Professor Clones** - HeyGen avatars join each room to help students
-3. **Smart Conversations** - Real-time transcription and context-aware responses
-4. **Analytics Dashboard** - Track confusion points and student progress
-5. **Interactive Quizzes** - Auto-generated quizzes sent via Zoom Team Chat with video explanations
-6. **3Blue1Brown-Style Videos** - Manim pipeline generates animated explainer videos from YouTube lectures
+---
+
+## Features
+
+### 1. HeyGen AI Avatar Tutoring
+- Professor's likeness cloned as interactive AI avatar
+- Real-time lip-sync and natural conversation
+- Joins Zoom breakout rooms to tutor students 1-on-1
+- Context-aware responses using lecture transcripts
+
+### 2. Manim Video Generation Pipeline
+Turn any YouTube lecture into animated educational content:
+```
+YouTube URL → Transcribe → Scene Split → Manim Animations → Voice Clone → Final Video
+```
+- **Whisper transcription** via Dedalus API
+- **LLM scene planning** - intelligently splits lectures into concept-based scenes
+- **Auto-generated Manim code** - creates 3Blue1Brown-style animations
+- **Voice cloning** with PocketTTS - maintains the professor's voice
+- **Parallel rendering** - generates multiple scenes concurrently
+
+### 3. Interactive Quiz System
+- **Zoom Team Chat Chatbot** - students type `/makequiz` to start
+- **Auto-generated questions** from lecture concepts using Cerebras LLM
+- **Interactive button cards** - A/B/C/D answer buttons
+- **Video on wrong answer** - plays the relevant Manim explainer scene
+- **Progress tracking** - scores and concepts to review
+
+### 4. Real-Time Meeting Integration
+- **Zoom RTMS** (Real-Time Media Streams) for live transcription
+- **WebSocket architecture** - Render service broadcasts to local dashboard
+- **Live transcript accumulation** per meeting
+- **Demeanor/engagement analysis** (extensible)
+
+### 5. Professor Dashboard
+- Frosted glass Electron UI
+- One-click session start
+- Real-time student analytics
+- Quiz trigger buttons
+- Meeting management
+
+---
 
 ## Architecture
 
 ```
-Electron UI (Top Bar) ←→ WebSocket ←→ Python Backend (localhost:8000)
-                                            ├─ Zoom REST API (meetings)
-                                            ├─ Zoom Team Chat Chatbot API (quizzes)
-                                            ├─ HeyGen API (avatars)
-                                            ├─ Deepgram API (TTS)
-                                            ├─ Cerebras/OpenAI (quiz generation)
-                                            └─ SQLite DB
-
-RTMS Service (Render) ←─── Zoom RTMS WebSocket ───→ Zoom Meeting
-       │
-       └── Real-time transcripts, audio, video, chat
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              PROFESSOR DASHBOARD                                 │
+│                         (Electron + React + Tailwind)                           │
+└───────────────────────────────────┬─────────────────────────────────────────────┘
+                                    │ WebSocket
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              PYTHON BACKEND                                      │
+│                            (FastAPI + SQLite)                                    │
+│                                                                                  │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
+│  │   Zoom API  │  │  HeyGen API │  │ Cerebras LLM│  │  Quiz Session Manager   │ │
+│  │  (meetings) │  │  (avatars)  │  │ (generation)│  │  (state per student)    │ │
+│  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────────┘ │
+└───────────────────────────────────┬─────────────────────────────────────────────┘
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        ▼                           ▼                           ▼
+┌───────────────┐         ┌─────────────────┐         ┌─────────────────┐
+│  Zoom Meeting │         │  Render (RTMS)  │         │  Zoom Team Chat │
+│               │◄───────►│   Node.js       │◄───────►│    Chatbot      │
+│  - Breakouts  │  RTMS   │   - Webhooks    │   WS    │  - /makequiz    │
+│  - Avatars    │  WS     │   - Transcripts │         │  - Buttons      │
+└───────────────┘         └─────────────────┘         └─────────────────┘
 ```
 
-## Current Status
+---
 
-✅ **Phase 1 Complete** - Foundation built
-- Electron frontend with frosted glass UI
-- Python FastAPI backend
-- WebSocket communication
-- SQLite database
+## Tech Stack
 
-✅ **Phase 2 Complete** - Zoom Integration
-- Zoom API adapter
-- Meeting and breakout room creation
-- SessionOrchestrator service
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Electron, React, TypeScript, Tailwind CSS |
+| **Backend** | Python 3.11+, FastAPI, SQLAlchemy, asyncio |
+| **RTMS Service** | Node.js, Express, WebSocket |
+| **Video Pipeline** | Manim, FFmpeg, PocketTTS |
+| **Database** | SQLite (dev), PostgreSQL (prod) |
+| **Deployment** | Render (cloud), uv (Python pkg mgmt) |
 
-✅ **Phase 3 Complete** - HeyGen Avatar Integration
-- HeyGen Streaming Avatar SDK
-- Real-time lip-sync with audio
-- Avatar window for student tutoring
+### APIs & Services
 
-✅ **Quiz Bot Complete** - Interactive Quiz System
-- Zoom Team Chat Chatbot integration
-- Auto-generated quizzes from lecture concepts
-- Video explanations for wrong answers (Manim 3Blue1Brown style)
-- Professor dashboard with quiz trigger button
-- WebSocket architecture: Render receives webhooks, broadcasts to local Python
+| Service | Purpose |
+|---------|---------|
+| **Zoom REST API** | Meeting creation, breakout rooms, user management |
+| **Zoom RTMS** | Real-time audio/video/transcript streams |
+| **Zoom Team Chat** | Chatbot for interactive quizzes |
+| **HeyGen** | AI avatar generation and streaming |
+| **Deepgram** | Speech-to-text, text-to-speech |
+| **Cerebras** | Fast LLM inference (Llama 3.3 70B) |
+| **Dedalus** | Whisper API for transcription |
+| **PocketTTS** | Voice cloning for narration |
+| **HuggingFace** | Model hosting for TTS |
 
-✅ **Manim Pipeline Complete** - Educational Video Generation
-- YouTube lecture → Transcription → Scene splitting
-- LLM-generated Manim animation code
-- Voice cloning with PocketTTS
-- Auto-linked quiz questions per video scene
+---
 
-See **[PLAN.md](./PLAN.md)** for full roadmap.
+## Project Structure
 
-## Manim Video Pipeline
+```
+TreeHacks2026/
+├── src/                              # Manim video pipeline
+│   ├── pipeline.py                   # Main orchestration
+│   ├── downloader.py                 # YouTube audio download
+│   ├── transcribe.py                 # Whisper transcription
+│   ├── scene_splitter.py             # LLM-based scene planning
+│   ├── clip_generator.py             # Manim code generation
+│   ├── voice.py                      # TTS with voice cloning
+│   └── stitcher.py                   # Final video assembly
+│
+├── backend/                          # Python backend
+│   ├── app.py                        # FastAPI main app
+│   ├── run_chatbot_client.py         # Quiz WebSocket client
+│   ├── services/
+│   │   ├── render_ws_client.py       # Connects to Render WebSocket
+│   │   ├── chatbot_ws_handler.py     # Handles /makequiz commands
+│   │   ├── quiz_generator.py         # LLM quiz generation
+│   │   ├── quiz_session_manager.py   # Per-student quiz state
+│   │   ├── zoom_chatbot_service.py   # Zoom API message sending
+│   │   ├── heygen_controller.py      # Avatar management
+│   │   ├── session_orchestrator.py   # Meeting lifecycle
+│   │   └── llm_service.py            # Cerebras/OpenAI wrapper
+│   └── models/                       # SQLAlchemy models
+│
+├── rtms-zoom-official/               # Render-deployed Node.js service
+│   ├── index.js                      # Express + webhook handlers
+│   ├── frontendWss.js                # WebSocket broadcasting
+│   └── library/                      # RTMS SDK wrappers
+│
+├── frontend/                         # Electron app (if separate)
+│
+├── outputs/                          # Generated content (gitignored)
+│   └── {topic-name}/
+│       ├── audio.mp3
+│       ├── transcript.txt
+│       ├── scene_plan.json
+│       ├── quiz_questions.json
+│       └── videos/
+│
+├── prompts/                          # LLM prompt templates
+│
+└── docs/                             # Documentation
+    ├── QUIZ_INTEGRATION.md           # Quiz system guide
+    ├── QUICKSTART.md
+    └── DEPLOYMENT.md
+```
 
-Generate 3Blue1Brown-style animated videos from any YouTube lecture:
+---
+
+## Quick Start
+
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- uv (Python package manager)
+- FFmpeg
+- LaTeX (for Manim)
+
+### 1. Clone and Install
 
 ```bash
-# Set up environment
+git clone https://github.com/ChristmasSun/TreeHacks2026.git
+cd TreeHacks2026
+
+# Python dependencies
+uv sync
+
+# Node dependencies (for RTMS service)
+cd rtms-zoom-official && npm install && cd ..
+```
+
+### 2. Configure Environment
+
+```bash
+# Backend
+cp backend/.env.example backend/.env
+# Edit backend/.env with your API keys
+
+# RTMS Service
+cp rtms-zoom-official/.env.example rtms-zoom-official/.env
+# Edit with Zoom credentials
+```
+
+Required API keys:
+- `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, `ZOOM_ACCOUNT_ID`
+- `ZOOM_CHATBOT_CLIENT_ID`, `ZOOM_CHATBOT_CLIENT_SECRET`, `ZOOM_BOT_JID`
+- `HEYGEN_API_KEY`
+- `CEREBRAS_API_KEY`
+- `DEDALUS_API_KEY`
+- `HF_TOKEN` (HuggingFace for PocketTTS)
+
+### 3. Generate Videos from a Lecture
+
+```bash
 export DEDALUS_API_KEY="your-key"
 export HF_TOKEN="your-huggingface-token"
 
-# Generate videos from a YouTube lecture
 uv run python -c "
 import asyncio
 from src.pipeline import run
 
 asyncio.run(run(
-    'https://www.youtube.com/watch?v=VIDEO_ID',
-    'outputs/topic-name',
+    'https://www.youtube.com/watch?v=YOUR_VIDEO_ID',
+    'outputs/your-topic',
     clip_concurrency=4
 ))
 "
 ```
 
-**Pipeline stages:**
-1. Download audio from YouTube
-2. Transcribe with Whisper (via Dedalus API)
-3. LLM splits into concept-based scenes
-4. Generate Manim animation code per scene
-5. Clone speaker's voice (PocketTTS)
-6. Render animations with voiceover
-7. Stitch into final video
-
-**Output:**
-- `outputs/topic-name/videos/final.mp4` - Complete video
-- `outputs/topic-name/videos/scene_XXX_voiced.mp4` - Individual scenes
-- `outputs/topic-name/quiz_questions.json` - Auto-linked quiz
-
-See **[docs/QUIZ_INTEGRATION.md](./docs/QUIZ_INTEGRATION.md)** for full integration guide.
-
-## Quick Start
+### 4. Run the Quiz Chatbot
 
 ```bash
-# 1. Install dependencies
-npm install
-cd backend && pip install -r requirements.txt
+# Set quiz data directory
+export QUIZ_DATA_DIR=outputs/your-topic
 
-# 2. Configure environment
-cd backend
-cp .env.example .env
-# Add your API keys to .env
+# Start the WebSocket client
+python backend/run_chatbot_client.py
+```
 
-# 3. Initialize database
-python scripts/init_db.py
-python scripts/seed_data.py
+Then in Zoom Team Chat, message your bot with `/makequiz`.
 
-# 4. Run the app
+### 5. Run the Full System
+
+```bash
+# Terminal 1: Backend
+cd backend && uvicorn app:app --reload --port 8000
+
+# Terminal 2: RTMS Service (or deploy to Render)
+cd rtms-zoom-official && node index.js
+
+# Terminal 3: Frontend
 npm run dev
 ```
 
-See [docs/QUICKSTART.md](./docs/QUICKSTART.md) for detailed setup instructions.
+---
 
-## Tech Stack
+## How It Works
 
-- **Frontend**: Electron, React, TypeScript, Tailwind CSS
-- **Backend**: Python 3.11+, FastAPI, SQLAlchemy
-- **RTMS Service**: Node.js, Express (handles Zoom real-time media streams)
-- **Database**: SQLite (development), PostgreSQL (production)
-- **APIs**:
-  - Zoom REST API (meetings, users)
-  - Zoom Team Chat Chatbot API (interactive quizzes)
-  - Zoom RTMS (real-time transcripts)
-  - HeyGen Streaming Avatar SDK
-  - Deepgram (speech-to-text, text-to-speech)
-  - Cerebras/OpenAI (quiz generation)
-- **Deployment**: Render (RTMS service + backend), Electron packaged app (frontend)
+### Video Generation Flow
+
+1. **Download** - Extracts audio from YouTube video
+2. **Transcribe** - Whisper API converts speech to text with timestamps
+3. **Scene Split** - LLM analyzes transcript, identifies key concepts, plans scenes
+4. **Generate Code** - LLM writes Manim Python code for each scene
+5. **Voice Clone** - PocketTTS extracts speaker voice sample, generates narration
+6. **Render** - Manim renders animations, FFmpeg merges with voiceover
+7. **Stitch** - Combines all scenes into final video
+
+### Quiz Flow
+
+1. **User** types `/makequiz` in Zoom Team Chat
+2. **Zoom** sends webhook to Render
+3. **Render** broadcasts via WebSocket to local Python
+4. **Python** loads quiz JSON, creates session, sends intro card
+5. **User** clicks "Start Quiz" button
+6. **Python** sends first question with A/B/C/D buttons
+7. **User** clicks answer
+8. **If wrong** → Python triggers video playback, sends explanation
+9. **If right** → Python sends next question
+10. **At end** → Python sends score summary
+
+### WebSocket Architecture
+
+```
+Zoom Webhook → Render (HTTPS) → WebSocket broadcast → Local Python
+                                                           ↓
+                                               Zoom API (send messages)
+```
+
+This allows the Python backend to run locally while receiving Zoom events through Render.
+
+---
 
 ## Documentation
 
-- [PLAN.md](./PLAN.md) - Project roadmap and status
-- [docs/QUICKSTART.md](./docs/QUICKSTART.md) - Quick start guide
-- [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) - Deployment instructions
-- [docs/API.md](./docs/API.md) - API documentation
-- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) - System architecture
-- [docs/QUIZ_INTEGRATION.md](./docs/QUIZ_INTEGRATION.md) - Manim video + quiz integration guide
+| Document | Description |
+|----------|-------------|
+| [QUIZ_INTEGRATION.md](./docs/QUIZ_INTEGRATION.md) | Complete guide to video + quiz integration |
+| [QUICKSTART.md](./docs/QUICKSTART.md) | Step-by-step setup guide |
+| [DEPLOYMENT.md](./docs/DEPLOYMENT.md) | Deploy to Render |
+| [PLAN.md](./PLAN.md) | Project roadmap and phases |
+
+---
+
+## Sample Outputs
+
+Videos generated from:
+- **Think Fast, Talk Smart** (Stanford communication lecture) - 14 scenes
+- **Mathematics Gives You Wings** (fluid dynamics lecture) - 16 scenes
+- **Human Behavioral Biology** (Sapolsky lecture) - 10 scenes
+
+Each generates:
+- Animated Manim videos per concept
+- Quiz questions linked to videos
+- Voice-cloned narration
+
+---
 
 ## License
 
 MIT
+
+---
+
+## Acknowledgments
+
+- [Manim Community](https://www.manim.community/) - Animation engine
+- [3Blue1Brown](https://www.3blue1brown.com/) - Inspiration for visual style
+- [Zoom Developer Platform](https://developers.zoom.us/) - Meeting & chat APIs
+- [HeyGen](https://www.heygen.com/) - AI avatar technology
+- [Cerebras](https://www.cerebras.net/) - Fast LLM inference
