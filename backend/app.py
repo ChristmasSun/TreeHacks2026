@@ -272,7 +272,16 @@ async def load_lecture_content(data: dict):
                 shutil.copy2(video_path, dest_path)
             videos_count += 1
 
-    # 4. Set lecture context from directory name
+    # 4. Load voice sample if present in output directory
+    voice_sample = output_path / "voice" / "voice_sample.wav"
+    if voice_sample.exists():
+        try:
+            pocket_tts_service.load_voice(str(voice_sample))
+            logger.info(f"Loaded cloned voice from {voice_sample}")
+        except Exception as e:
+            logger.error(f"Failed to load voice sample: {e}")
+
+    # 5. Set lecture context from directory name
     topic = output_path.name.replace("-", " ").replace("_", " ").title()
     set_lecture_context(topic=topic, key_points=f"{concepts_count} concepts loaded", notes=output_dir)
 
