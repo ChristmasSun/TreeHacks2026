@@ -1137,6 +1137,146 @@ async def quiz_video_completed(data: dict):
     return result
 
 
+# ============ Meeting Chat Quiz Endpoints ============
+
+# Store active meeting quizzes: meeting_id -> {current_question, questions, scores}
+meeting_quizzes: dict = {}
+
+
+@app.post("/api/quiz/start-meeting-quiz")
+async def start_meeting_quiz(data: dict):
+    """
+    Start a quiz in a meeting chat.
+    Called from RTMS service when someone types /quiz.
+    """
+    meeting_id = data.get("meeting_id")
+    user_name = data.get("user_name", "Student")
+
+    if not meeting_id:
+        raise HTTPException(status_code=400, detail="Missing meeting_id")
+
+    logger.info(f"Starting meeting quiz for {meeting_id} requested by {user_name}")
+
+    try:
+        # Load concepts from video output directory
+        mapping = load_concept_video_mapping(quiz_video_output_dir)
+
+        if not mapping:
+            return {
+                "question": "No lecture content available yet. Ask your professor to set up quiz content."
+            }
+
+        # Convert to concepts list
+        concepts = [
+            {
+                "concept": name,
+                "description": info["description"],
+                "video_path": info.get("video_path")
+            }
+            for name, info in mapping.items()
+        ]
+
+        # Generate quiz
+        quiz = await generate_quiz_from_concepts(
+            concepts=concepts,
+            num_questions=min(3, len(concepts)),  # Fewer questions for meeting chat
+            topic="Lecture Quiz"
+        )
+
+        # Store quiz state for this meeting
+        meeting_quizzes[meeting_id] = {
+            "quiz": quiz,
+            "current_idx": 0,
+            "scores": {},  # user_id -> score
+            "answered": set()  # users who answered current question
+        }
+
+        # Format first question
+        q = quiz.questions[0]
+        question_text = f"📝 Question 1/{len(quiz.questions)}: {q.question_text}\n\n"
+        for opt in q.options:
+            question_text += f"{opt}\n"
+        question_text += "\n(Reply with A, B, C, or D)"
+
+        return {"question": question_text}
+
+    except Exception as e:
+        logger.error(f"Error starting meeting quiz: {e}")
+        return {"question": f"Sorry, couldn't generate quiz: {str(e)}"}
+
+
+@app.post("/api/quiz/meeting-answer")
+async def handle_meeting_answer(data: dict):
+    """
+    Handle a quiz answer from meeting chat.
+    """
+    meeting_id = data.get("meeting_id")
+    user_name = data.get("user_name", "Student")
+    user_id = data.get("user_id", user_name)
+    answer = data.get("answer", "").upper()
+
+    if not meeting_id or meeting_id not in meeting_quizzes:
+        return {"message": "No active quiz. Type /quiz to start one!"}
+
+    quiz_state = meeting_quizzes[meeting_id]
+    quiz = quiz_state["quiz"]
+    current_idx = quiz_state["current_idx"]
+
+    if current_idx >= len(quiz.questions):
+        return {"message": "Quiz already completed!"}
+
+    # Check if user already answered
+    answer_key = f"{user_id}_{current_idx}"
+    if answer_key in quiz_state["answered"]:
+        return {"message": f"{user_name}, you already answered this question!"}
+
+    quiz_state["answered"].add(answer_key)
+
+    question = quiz.questions[current_idx]
+    is_correct = answer == question.correct_answer.upper()
+
+    # Track score
+    if user_id not in quiz_state["scores"]:
+        quiz_state["scores"][user_id] = {"name": user_name, "correct": 0, "total": 0}
+    quiz_state["scores"][user_id]["total"] += 1
+    if is_correct:
+        quiz_state["scores"][user_id]["correct"] += 1
+
+    # Build response
+    if is_correct:
+        response = f"✅ {user_name} got it right! {question.explanation}"
+    else:
+        response = f"❌ {user_name}, the correct answer was {question.correct_answer}. {question.explanation}"
+
+    # Move to next question after a few answers or timeout
+    # For simplicity, move after each answer for now
+    quiz_state["current_idx"] += 1
+    quiz_state["answered"] = set()
+
+    if quiz_state["current_idx"] < len(quiz.questions):
+        # Send next question
+        next_q = quiz.questions[quiz_state["current_idx"]]
+        response += f"\n\n📝 Question {quiz_state['current_idx'] + 1}/{len(quiz.questions)}: {next_q.question_text}\n\n"
+        for opt in next_q.options:
+            response += f"{opt}\n"
+        response += "\n(Reply with A, B, C, or D)"
+    else:
+        # Quiz complete - show scores
+        response += "\n\n🎉 Quiz Complete! Scores:\n"
+        sorted_scores = sorted(
+            quiz_state["scores"].values(),
+            key=lambda x: x["correct"],
+            reverse=True
+        )
+        for i, score in enumerate(sorted_scores[:5]):
+            response += f"{i+1}. {score['name']}: {score['correct']}/{score['total']}\n"
+
+        # Clean up
+        del meeting_quizzes[meeting_id]
+
+    return {"message": response}
+
+
 @app.get("/api/quiz/session/{student_jid}")
 async def get_quiz_session_api(student_jid: str):
     """Get quiz session stats for a student."""
