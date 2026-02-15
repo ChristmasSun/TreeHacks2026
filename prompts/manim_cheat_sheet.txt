@@ -14,6 +14,7 @@ class MyScene(Scene):
 *   Short formulas: `MathTex(r"E = mc^2")`
 *   Keep formulas modular: split large expressions into smaller `MathTex` objects if you need per-part animation.
 *   Prefer `Text` for long sentences and narration-aligned labels.
+*   Use `\frac{a}{b}` for fractions, NEVER `{a \over b}` (the TeX primitive `\over` can cause rendering issues).
 
 ### 3. Matrix Rendering (Preferred)
 *   Use `Matrix([["a", "b"], ["c", "d"]])` for standard matrices.
@@ -34,7 +35,7 @@ class MyScene(Scene):
     *   group with `VGroup`,
     *   animate specific child mobjects directly.
 
-### 6. Layout and Anti-Overlap
+### 6. Layout and Anti-Overlap (CRITICAL)
 *   Use zones:
     *   title: `.to_edge(UP, buff=0.5)`
     *   caption: `.to_edge(DOWN, buff=0.5)`
@@ -43,8 +44,26 @@ class MyScene(Scene):
     *   `.next_to(..., buff=0.5)`
     *   `.arrange(..., buff=0.4)`
     *   `.to_edge(..., buff=0.5)`
-*   Keep at most 2-3 text blocks visible.
-*   `FadeOut` old labels before introducing new blocks.
+*   **Strict limit: max 3 objects visible** (title + caption + one center element). Count everything.
+*   **Before adding ANY new center element, `FadeOut` or `Transform` the current one.**
+*   Correct pattern for stepping through multiple equations:
+```python
+eq1 = MathTex(r"y = x^2")
+self.play(Write(eq1))
+self.wait(1)
+eq2 = MathTex(r"y' = 2x")
+self.play(ReplacementTransform(eq1, eq2))  # eq1 is gone, eq2 replaces it
+self.wait(1)
+```
+*   **Wrong** (causes overlap):
+```python
+eq1 = MathTex(r"y = x^2")
+self.play(Write(eq1))
+eq2 = MathTex(r"y' = 2x").next_to(eq1, DOWN)
+self.play(Write(eq2))  # BAD: eq1 is still visible, now 2 equations in center
+```
+*   When switching from a graph/diagram to equations: `FadeOut` the graph first.
+*   `SurroundingRectangle`, `Arrow`, `Brace`: always `FadeOut` within 1-2 beats.
 
 ### 7. Core Animation Primitives
 *   Create/reveal: `Create`, `Write`, `FadeIn`, `DrawBorderThenFill`

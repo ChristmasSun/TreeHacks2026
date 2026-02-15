@@ -8,13 +8,14 @@ from typing import TypedDict
 
 from .llm import call_llm
 from .render import sanitize_code, render_manim_code
-from .transcribe import transcribe
+from .transcribe import transcribe, timestamp_audio, SegmentTimestamp
 from .download import download_audio
 from .voice import extract_voice_sample, generate_voiceover, get_audio_duration, merge_audio_video
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 LLM_SEMAPHORE = asyncio.Semaphore(5)
+API_SEMAPHORE = asyncio.Semaphore(3)  # gates Whisper timestamp calls
 
 
 class ScenePlan(TypedDict):
@@ -91,15 +92,50 @@ async def generate_narration(scene_description: str, transcript_excerpt: str) ->
     return response.strip()
 
 
-def _build_narration_context(narration: str, duration: float) -> str:
+def _format_timestamps(segments: list[SegmentTimestamp]) -> str:
+    """Format Whisper segments into a readable timeline for the code generator."""
+    lines = []
+    for seg in segments:
+        if seg["words"]:
+            # Group words into ~3-5 word phrases with their time ranges
+            words = seg["words"]
+            i = 0
+            while i < len(words):
+                chunk = words[i:i + 4]
+                phrase = " ".join(w["word"] for w in chunk)
+                t_start = chunk[0]["start"]
+                t_end = chunk[-1]["end"]
+                lines.append(f"  [{t_start:.1f}s - {t_end:.1f}s] \"{phrase}\"")
+                i += len(chunk)
+        else:
+            lines.append(f"  [{seg['start']:.1f}s - {seg['end']:.1f}s] \"{seg['text']}\"")
+    return "\n".join(lines)
+
+
+def _build_narration_context(
+    narration: str,
+    duration: float,
+    segments: list[SegmentTimestamp] | None = None,
+) -> str:
     """Build the narration context string for the code generation prompt."""
-    return (
+    ctx = (
         f"A voiceover will play over this animation. It lasts {duration:.1f} seconds.\n"
         f"Pace your animation to fill this time — the total of all run_time values and "
         f"self.wait() calls should sum to approximately {duration:.1f} seconds.\n"
         f"Time key visual reveals to match what the narration describes.\n"
         f"Narration text: \"{narration}\""
     )
+
+    if segments:
+        timeline = _format_timestamps(segments)
+        ctx += (
+            f"\n\n--- WORD-LEVEL TIMING (from Whisper) ---\n"
+            f"Use these timestamps to sync your animations precisely. "
+            f"Show each visual element right when the narrator mentions it:\n"
+            f"{timeline}"
+        )
+
+    return ctx
 
 
 async def generate_manim_code(
@@ -183,11 +219,27 @@ async def process_single_clip(
             await asyncio.to_thread(
                 generate_voiceover, narration, voice_sample_path, voiceover_path,
             )
-            narration_duration = get_audio_duration(voiceover_path)
+            # ── Step 2b: Measure duration + Whisper timestamp in parallel ────
+            async def _safe_timestamp(path: str) -> list[SegmentTimestamp] | None:
+                try:
+                    async with API_SEMAPHORE:
+                        print(f"[Clip {i+1}] Running Whisper for word-level timestamps...")
+                        segs = await timestamp_audio(path)
+                        wc = sum(len(s["words"]) for s in segs)
+                        print(f"[Clip {i+1}] Got timestamps for {wc} words across {len(segs)} segments")
+                        return segs
+                except Exception as e:
+                    print(f"[Clip {i+1}] Whisper timestamping failed (continuing without): {e}")
+                    return None
+
+            narration_duration, segments = await asyncio.gather(
+                asyncio.to_thread(get_audio_duration, voiceover_path),
+                _safe_timestamp(voiceover_path),
+            )
             print(f"[Clip {i+1}] Voiceover duration: {narration_duration:.1f}s")
 
             # ── Step 3: Build timing context for code gen ───────────────────
-            narration_context = _build_narration_context(narration, narration_duration)
+            narration_context = _build_narration_context(narration, narration_duration, segments)
 
         except Exception as e:
             print(f"[Clip {i+1}] Narration/TTS failed, proceeding without voiceover: {e}")
@@ -376,25 +428,26 @@ async def run(
     # Step 1: Download audio from YouTube
     audio_path = await download_audio(url, output_dir)
 
-    # Step 2: Transcribe audio
-    print("[Pipeline] Transcribing audio...")
-    transcript = await transcribe(audio_path)
+    # Step 2 + 3: Transcribe audio and extract voice sample in parallel
+    print("[Pipeline] Transcribing audio + extracting voice sample...")
+    voice_dir = os.path.join(output_dir, "voice")
+
+    async def _safe_extract_voice() -> str | None:
+        try:
+            return await asyncio.to_thread(extract_voice_sample, audio_path, voice_dir)
+        except Exception as e:
+            print(f"[Pipeline] Voice extraction failed, proceeding without voiceover: {e}")
+            return None
+
+    transcript, voice_sample_path = await asyncio.gather(
+        transcribe(audio_path),
+        _safe_extract_voice(),
+    )
 
     # Save transcript for reference
     transcript_save_path = os.path.join(output_dir, "transcript.txt")
     Path(transcript_save_path).write_text(transcript, encoding="utf-8")
     print(f"[Pipeline] Transcript saved to {transcript_save_path}")
-
-    # Step 3: Extract voice sample for TTS cloning
-    print("[Pipeline] Extracting voice sample from lecture audio...")
-    voice_dir = os.path.join(output_dir, "voice")
-    try:
-        voice_sample_path = await asyncio.to_thread(
-            extract_voice_sample, audio_path, voice_dir,
-        )
-    except Exception as e:
-        print(f"[Pipeline] Voice extraction failed, proceeding without voiceover: {e}")
-        voice_sample_path = None
 
     # Step 4: Split into scenes
     scenes = await split_transcript_into_scenes(transcript)

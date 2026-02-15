@@ -5,7 +5,11 @@ import shutil
 import asyncio
 import tempfile
 
-LATEX_AVAILABLE = shutil.which("latex") is not None
+LATEX_AVAILABLE = (
+    shutil.which("latex") is not None
+    or shutil.which("pdflatex") is not None
+    or shutil.which("xelatex") is not None
+)
 
 
 def inject_math_shims(code: str) -> str:
@@ -65,6 +69,28 @@ def normalize_latex_markup(code: str) -> str:
         code = code.replace(needle, replacement)
 
     code = code.replace(r"\{", "{").replace(r"\}", "}")
+    return code
+
+
+def normalize_tex_primitives(code: str) -> str:
+    """Replace TeX primitives with their LaTeX equivalents in MathTex strings.
+
+    The LLM sometimes generates ``{a \\over b}`` instead of ``\\frac{a}{b}``.
+    While \\over is valid TeX, it renders as literal text if the MathTex shim
+    is active (no LaTeX), and is generally less reliable.
+    """
+    # Match {numerator \over denominator} inside Python string literals
+    # and replace with \frac{numerator}{denominator}
+    def _over_to_frac(m: re.Match) -> str:
+        num = m.group(1).strip()
+        den = m.group(2).strip()
+        return f"\\frac{{{num}}}{{{den}}}"
+
+    code = re.sub(
+        r"\{([^{}]+?)\\over\s*([^{}]+?)\}",
+        _over_to_frac,
+        code,
+    )
     return code
 
 
@@ -170,6 +196,7 @@ def sanitize_code(code: str) -> str:
         code = normalize_latex_markup(code)
         code = inject_math_shims(code)
 
+    code = normalize_tex_primitives(code)
     code = normalize_mobject_accessors(code)
     code = ensure_rate_functions_usage(code)
     code = fix_spacing_issues(code)

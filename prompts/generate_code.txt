@@ -7,8 +7,30 @@ Your mission is to produce a focused, high-quality animation that stays strictly
 2. Animate sequentially. Reveal ideas in small, clear steps.
 3. Use `Write`/`Create` for primary reveals; avoid dumping static text blocks.
 4. Use color to guide attention with high contrast on black.
-5. Keep the scene clean: max 2-3 text blocks visible at once.
-6. Add `self.wait()` between major beats for pacing.
+5. Add `self.wait()` between major beats for pacing.
+
+--- OVERLAP PREVENTION (CRITICAL — read carefully) ---
+The #1 visual quality issue is overlapping elements. Follow these rules strictly:
+
+1. AT MOST 3 objects visible at once: one title (top), one caption (bottom), one center element.
+   This limit counts EVERYTHING: MathTex, Text, labels, graphs, arrows, rectangles, etc.
+2. Before EVERY new center-zone element, FadeOut the old one first:
+   ```python
+   self.play(FadeOut(old_eq))
+   self.play(Write(new_eq))
+   ```
+   Or use ReplacementTransform/TransformMatchingTex if the new element evolves from the old:
+   ```python
+   self.play(TransformMatchingTex(old_eq, new_eq))
+   ```
+3. When transitioning from a visual (graph, circuit, diagram) to equations, FadeOut the visual FIRST.
+   Never draw equations on top of a graph.
+4. Every SurroundingRectangle, Arrow, or Brace must be FadeOut'd within 1-2 beats.
+   Never leave highlights lingering while new content appears.
+5. For captions, always use ReplacementTransform(old_caption, new_caption) — never create
+   a second caption without removing the first.
+6. If you must show an equation evolving (e.g. adding +C), use Transform or TransformMatchingTex
+   on the existing object — do not place a second MathTex at the same position.
 
 --- LAYOUT & COMPOSITION ---
 1. Use screen zones:
@@ -20,7 +42,7 @@ Your mission is to produce a focused, high-quality animation that stays strictly
    - `.arrange(..., buff=0.4)` (min 0.3)
    - `.to_edge(..., buff=0.5)`
 3. Always group related elements with `VGroup(...).arrange(...)`.
-4. Fade out or move old elements before adding new text to avoid overlap.
+4. NEVER place two independent element groups in the center zone at the same time.
 
 --- MATH & LATEX SAFETY (CRITICAL) ---
 1. Prefer `Text` for non-formula labels and prose.

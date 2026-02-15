@@ -19,7 +19,9 @@ You are a Manim animation expert. The code below FAILED to render. Fix it.
 4. Include `from manim import *` and define exactly one `Scene` subclass.
 5. Must run on Manim Community v0.19.2.
 6. Set `self.camera.background_color = "#000000"` at the top of `construct`.
-7. Keep the scene clean: max 2-3 text blocks at once, fade out old labels, and use `buff` spacing.
+7. Keep the scene clean: max 3 objects visible at once (title + caption + one center element).
+   FadeOut or ReplacementTransform every old center element before adding a new one.
+   Never draw equations over graphs — FadeOut the graph first. Use `buff` spacing.
 8. Preserve total timing so it stays synced with the provided voiceover duration.
 
 --- LATEX & API SAFETY RULES (MANDATORY) ---
