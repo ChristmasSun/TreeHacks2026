@@ -1,6 +1,6 @@
 """
 LLM Service for AI Tutoring
-Uses Cerebras (fast) or OpenAI GPT-4, with live RTMS transcript context
+Uses Cerebras gpt-oss-120b with live RTMS transcript context
 """
 import os
 import logging
@@ -119,9 +119,7 @@ async def generate_tutoring_response(
     if transcript_context:
         logger.info(f"Using live transcript context ({len(transcript_context)} chars)")
 
-    # Try Cerebras first (faster), then OpenAI
     cerebras_key = os.getenv("CEREBRAS_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
 
     if cerebras_key:
         try:
@@ -131,15 +129,6 @@ async def generate_tutoring_response(
             return response
         except Exception as e:
             logger.error(f"Cerebras error: {e}")
-
-    if openai_key:
-        try:
-            response = await call_openai(
-                student_message, student_name, conversation_history, transcript_context
-            )
-            return response
-        except Exception as e:
-            logger.error(f"OpenAI error: {e}")
 
     # Fallback response if no LLM available
     logger.warning("No LLM API key available - using fallback response")
@@ -163,9 +152,11 @@ LECTURE CONTEXT:
 
 {transcript_section}
 RULES:
-- 2-3 sentences MAX (spoken aloud)
+- 2 sentences MAX by default (this is spoken aloud, keep it snappy)
+- If the student explicitly asks for a summary, explanation, or longer answer, give up to 4-5 sentences
 - Reference the lecture when relevant
 - Be warm and conversational
+- Never ask "what topic would you like to explore?" — just help with whatever they say
 {interrupt_note}"""
 
 
@@ -201,49 +192,7 @@ async def call_cerebras(
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama-3.3-70b",
-                "messages": messages,
-                "max_tokens": 100,  # Shorter for speed
-                "temperature": 0.7
-            }
-        )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
-
-
-async def call_openai(
-    student_message: str,
-    student_name: str,
-    conversation_history: Optional[list] = None,
-    transcript_context: str = ""
-) -> str:
-    """Call OpenAI API for response"""
-    api_key = os.getenv("OPENAI_API_KEY")
-
-    system_prompt = build_system_prompt(student_name, transcript_context)
-
-    messages = [{"role": "system", "content": system_prompt}]
-
-    # Add conversation history if provided
-    if conversation_history:
-        for msg in conversation_history[-10:]:  # Last 10 messages
-            messages.append({
-                "role": "user" if msg.get("role") == "student" else "assistant",
-                "content": msg.get("text", "")
-            })
-
-    messages.append({"role": "user", "content": student_message})
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "gpt-4-turbo-preview",
+                "model": "gpt-oss-120b",
                 "messages": messages,
                 "max_tokens": 200,
                 "temperature": 0.7

@@ -319,8 +319,31 @@
     let avatar = null;
     let sessionId = null;
     let conversationHistory = [];
-    let mediaRecorder = null;
-    let audioChunks = [];
+
+    // Track whether current speech was interrupted by user
+    let _wasInterrupted = false;
+
+    /**
+     * Speak text through HeyGen avatar using async mode.
+     * Completion is handled by AVATAR_STOP_TALKING event, not by awaiting.
+     */
+    async function avatarSpeak(text) {
+      _wasInterrupted = false;
+      // Interrupt any current speech first
+      try { await avatar.interrupt(); } catch(e) {}
+
+      console.log('🔊 avatarSpeak:', text.slice(0, 60));
+      try {
+        await avatar.speak({
+          text,
+          taskType: 'repeat',
+          taskMode: 'async',
+        });
+      } catch (e) {
+        console.error('Avatar speak error:', e);
+      }
+      // Don't wait for completion — AVATAR_STOP_TALKING event handles it
+    }
     
     const params = new URLSearchParams(window.location.search);
     const studentName = params.get('name') || 'Student';
@@ -393,22 +416,15 @@
           const greeting = 'Hello ' + studentName + '! I\'m your AI Professor. I have context from the lecture, so just ask me anything!';
           addMessage('avatar', greeting);
 
-          // Make avatar speak the greeting
-          isSpeakingResponse = true;
-          try {
-            await avatar.speak({
-              text: greeting,
-              taskType: 'talk',
-              taskMode: 'sync',
-            });
-          } catch (e) {
-            console.error('Greeting speak error:', e);
-          }
+          // Start audio pipeline immediately (don't wait for greeting to finish)
+          // The speak queue handles interruption if user talks during greeting
+          console.log('🎤 Starting audio pipeline...');
+          startAudioPipeline();
 
-          // Auto-start listening after greeting
+          // Speak greeting (will be interrupted if user speaks first)
+          isSpeakingResponse = true;
+          await avatarSpeak(greeting);
           isSpeakingResponse = false;
-          console.log('🎤 Auto-starting voice recognition...');
-          setTimeout(startListening, 500);
         });
         
         avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
@@ -423,19 +439,21 @@
 
         avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
           document.getElementById('speaking').classList.add('hidden');
-          console.log('🗣️ Avatar stopped talking');
-          // Resume normal listening if we were speaking
-          if (isSpeakingResponse) {
+          console.log('🗣️ Avatar stopped talking (interrupted=' + _wasInterrupted + ')');
+
+          if (!_wasInterrupted && isSpeakingResponse) {
+            // Natural end of speech — tell backend
             isSpeakingResponse = false;
-            interruptTranscript = '';
-            setTimeout(startListening, 300);
+            if (audioWs?.readyState === WebSocket.OPEN) {
+              audioWs.send(JSON.stringify({ type: 'avatar_done' }));
+            }
+            updateVoiceStatus('listening');
           }
         });
         
         const session = await avatar.createStartAvatar({
           quality: AvatarQuality.Medium,
           avatarName: 'default',
-          knowledgeBase: 'talking_photo',  // Required for instant/photo avatars
         });
         
         console.log('Session started:', session);
@@ -452,78 +470,33 @@
       const input = document.getElementById('input');
       const text = input.value.trim();
       if (!text || !avatar) return;
-      
+
       input.value = '';
       addMessage('student', text);
       conversationHistory.push({ role: 'student', text });
-      
+
       try {
+        const llmRes = await fetch(backendUrl + '/api/tutor-response', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            student_name: studentName,
+            history: conversationHistory
+          })
+        });
+
         let response;
-        
-        if (currentMode === 'voice') {
-          // Custom voice mode: LLM + TTS pipeline, then feed audio to HeyGen
-          const audioRes = await fetch(backendUrl + '/api/tutor-audio', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: text,
-              student_name: studentName,
-              history: conversationHistory,
-              tts_provider: 'openai',  // Change to 'elevenlabs' for cloned voice
-              // voice_id: 'YOUR_ELEVENLABS_VOICE_ID'  // Uncomment for custom voice
-            })
-          });
-          
-          if (audioRes.ok) {
-            const data = await audioRes.json();
-            response = data.response;
-            
-            if (data.audio_url) {
-              // HeyGen lip-syncs to our custom audio
-              const fullAudioUrl = backendUrl + data.audio_url;
-              console.log('Speaking with custom audio:', fullAudioUrl);
-              
-              await avatar.speak({
-                audio: fullAudioUrl,
-                taskType: 'talk',
-                taskMode: 'sync',
-              });
-            } else {
-              // Fallback to HeyGen TTS if audio generation failed
-              await avatar.speak({ text: response, taskType: 'talk', taskMode: 'sync' });
-            }
-          } else {
-            response = 'Sorry, I had trouble processing that. Could you try again?';
-            await avatar.speak({ text: response, taskType: 'talk', taskMode: 'sync' });
-          }
+        if (llmRes.ok) {
+          const data = await llmRes.json();
+          response = data.response;
         } else {
-          // Tutor mode: Use HeyGen's built-in TTS
-          const llmRes = await fetch(backendUrl + '/api/tutor-response', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: text,
-              student_name: studentName,
-              history: conversationHistory
-            })
-          });
-          
-          if (llmRes.ok) {
-            const data = await llmRes.json();
-            response = data.response;
-          } else {
-            response = 'That is a great question about "' + text + '". Let me help you understand this better.';
-          }
-          
-          await avatar.speak({
-            text: response,
-            taskType: 'talk',
-            taskMode: 'sync',
-          });
+          response = 'Sorry, I had trouble processing that. Could you try again?';
         }
-        
+
         addMessage('avatar', response);
         conversationHistory.push({ role: 'avatar', text: response });
+        await avatarSpeak(response);
       } catch (err) {
         console.error('Speak error:', err);
       }
@@ -533,20 +506,14 @@
       if (e.key === 'Enter') window.sendMessage();
     });
 
-    // ============ ALWAYS-ON VOICE CONVERSATION (DEEPGRAM) ============
-    const DEEPGRAM_API_KEY = 'a216e7ec6135ca418f0d51407e6162cf3f999a24';
+    // ============ VOICE PIPELINE (AudioWorklet → Backend WebSocket → Silero VAD + Deepgram nova-3) ============
     let isListening = false;
     let isSpeakingResponse = false;
-    let wasInterrupted = false;
-    let deepgramSocket = null;
+    let isMuted = false;
+    let audioWs = null;
+    let audioContext = null;
+    let audioWorkletNode = null;
     let mediaStream = null;
-    let finalTranscript = '';
-    let silenceTimeout = null;
-    let interruptTranscript = '';  // Track speech during avatar talking
-
-    async function setupVoiceRecognition() {
-      console.log('🎤 Setting up Deepgram voice recognition...');
-    }
 
     function updateVoiceStatus(status) {
       const statusEl = document.getElementById('voice-status');
@@ -566,7 +533,7 @@
         case 'speaking':
           statusEl.textContent = '🗣️ Speaking (interrupt anytime)';
           statusEl.style.background = '#3b82f6';
-          micBtn.classList.add('recording');  // Keep mic indicator on
+          micBtn.classList.add('recording');
           break;
         case 'muted':
           statusEl.textContent = '🔇 Muted';
@@ -576,263 +543,217 @@
       }
     }
 
-    async function startListening() {
-      if (isListening || isSpeakingResponse) return;
+    // AudioWorklet processor with resampling support (data URI for Electron compat)
+    const pcmProcessorCode = `
+      class PCMProcessor extends AudioWorkletProcessor {
+        constructor(options) {
+          super();
+          // Target: 512 samples at 16kHz (32ms chunks)
+          this.targetRate = 16000;
+          this.sourceRate = options.processorOptions?.sampleRate || sampleRate;
+          this.ratio = this.sourceRate / this.targetRate;
+          this.buffer = new Float32Array(512);
+          this.bufferIndex = 0;
+          this.srcIndex = 0; // fractional source index for resampling
+        }
+        process(inputs) {
+          const input = inputs[0]?.[0];
+          if (!input) return true;
+
+          if (Math.abs(this.ratio - 1.0) < 0.01) {
+            // No resampling needed (source is already 16kHz)
+            for (let i = 0; i < input.length; i++) {
+              this.buffer[this.bufferIndex++] = input[i];
+              if (this.bufferIndex === 512) {
+                this.port.postMessage(this.buffer.slice());
+                this.bufferIndex = 0;
+              }
+            }
+          } else {
+            // Linear interpolation downsampling
+            for (let i = 0; i < input.length; i++) {
+              this.srcIndex += 1;
+              while (this.srcIndex >= this.ratio) {
+                this.srcIndex -= this.ratio;
+                // Simple nearest-neighbor for speed
+                this.buffer[this.bufferIndex++] = input[i];
+                if (this.bufferIndex === 512) {
+                  this.port.postMessage(this.buffer.slice());
+                  this.bufferIndex = 0;
+                }
+              }
+            }
+          }
+          return true;
+        }
+      }
+      registerProcessor('pcm-processor', PCMProcessor);
+    `;
+    // Use data URI — Blob URLs can fail in file:// or Electron contexts
+    const processorDataUrl = 'data:application/javascript;base64,' + btoa(pcmProcessorCode);
+
+    async function startAudioPipeline() {
+      console.log('🎤 Starting audio pipeline...');
 
       try {
-        console.log('🎤 Starting Deepgram...');
+        // 1. Connect WebSocket to backend audio endpoint
+        const wsUrl = backendUrl.replace('http', 'ws') + '/ws/audio';
+        audioWs = new WebSocket(wsUrl);
 
-        // Get microphone - use default sample rate, we'll resample if needed
+        audioWs.onopen = () => {
+          console.log('✅ Audio WebSocket connected');
+          audioWs.send(JSON.stringify({
+            type: 'start_session',
+            student_name: studentName,
+            meeting_id: params.get('meeting_id'),
+          }));
+        };
+
+        audioWs.onmessage = async (event) => {
+          const data = JSON.parse(event.data);
+
+          switch (data.type) {
+            case 'interim_transcript':
+              // Update input field with live transcription
+              document.getElementById('input').value = data.text;
+              break;
+
+            case 'vad_speech_start':
+              if (!isSpeakingResponse) {
+                updateVoiceStatus('listening');
+              }
+              break;
+
+            case 'vad_speech_end':
+              // Backend processed: VAD end → speculative LLM response
+              console.log('🗣️ Got response:', data.response);
+
+              addMessage('student', data.transcript);
+              addMessage('avatar', data.response);
+              conversationHistory.push({ role: 'student', text: data.transcript });
+              conversationHistory.push({ role: 'avatar', text: data.response });
+              document.getElementById('input').value = '';
+
+              updateVoiceStatus('speaking');
+              isSpeakingResponse = true;
+
+              // Tell backend avatar is about to speak
+              if (audioWs?.readyState === WebSocket.OPEN) {
+                audioWs.send(JSON.stringify({ type: 'avatar_speaking' }));
+              }
+
+              // Fire-and-forget: avatar.speak() in async mode
+              // Completion handled by AVATAR_STOP_TALKING event
+              avatarSpeak(data.response);
+              break;
+
+            case 'interrupt_detected':
+              // Backend VAD detected speech during avatar playback — stop and listen
+              console.log('⚡ Interrupt detected — stopping avatar');
+              _wasInterrupted = true;
+              isSpeakingResponse = false;
+              try { await avatar.interrupt(); } catch(e) {}
+              updateVoiceStatus('listening');
+              break;
+
+            case 'error':
+              console.error('Backend error:', data.message);
+              break;
+          }
+        };
+
+        audioWs.onerror = (e) => {
+          console.error('Audio WebSocket error:', e);
+        };
+
+        audioWs.onclose = (e) => {
+          console.log('Audio WebSocket closed:', e.code);
+          isListening = false;
+          if (!isMuted) {
+            console.log('🔄 Reconnecting audio pipeline in 2s...');
+            setTimeout(startAudioPipeline, 2000);
+          }
+        };
+
+        // 2. Set up AudioWorklet for PCM capture (resample to 16kHz in worklet)
+        audioContext = new AudioContext();
+        console.log('AudioContext sample rate:', audioContext.sampleRate);
         mediaStream = await navigator.mediaDevices.getUserMedia({
           audio: {
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true
+            autoGainControl: true,
           }
         });
 
-        console.log('🎤 Got microphone stream');
-
-        // Use MediaRecorder with webm/opus - Deepgram handles this natively
-        const mediaRecorder = new MediaRecorder(mediaStream, {
-          mimeType: 'audio/webm;codecs=opus'
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        await audioContext.audioWorklet.addModule(processorDataUrl);
+        audioWorkletNode = new AudioWorkletNode(audioContext, 'pcm-processor', {
+          processorOptions: { sampleRate: audioContext.sampleRate }
         });
 
-        // Connect to Deepgram - optimized for speed
-        const dgUrl = 'wss://api.deepgram.com/v1/listen?' + new URLSearchParams({
-          model: 'nova-2',
-          language: 'en-US',
-          smart_format: 'true',
-          interim_results: 'true',
-          utterance_end_ms: '800',      // Faster end detection
-          vad_events: 'true',
-          endpointing: '200',           // Faster endpointing
-          punctuate: 'true'
-        }).toString();
-
-        console.log('🔗 Connecting to Deepgram...');
-        deepgramSocket = new WebSocket(dgUrl, ['token', DEEPGRAM_API_KEY]);
-
-        deepgramSocket.onopen = () => {
-          console.log('✅ Deepgram connected! Starting recording...');
-          isListening = true;
-          finalTranscript = '';
-          updateVoiceStatus('listening');
-
-          // Send audio chunks to Deepgram
-          mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0 && deepgramSocket?.readyState === WebSocket.OPEN) {
-              deepgramSocket.send(event.data);
-            }
-          };
-
-          // Start recording with 100ms chunks for lower latency
-          mediaRecorder.start(100);
-          window._mediaRecorder = mediaRecorder;
+        // Convert float32 chunks to int16 and send via WebSocket
+        audioWorkletNode.port.onmessage = (event) => {
+          if (audioWs?.readyState !== WebSocket.OPEN || isMuted) return;
+          const float32 = event.data;
+          const int16 = new Int16Array(float32.length);
+          for (let i = 0; i < float32.length; i++) {
+            int16[i] = Math.max(-32768, Math.min(32767, Math.round(float32[i] * 32767)));
+          }
+          audioWs.send(int16.buffer);
         };
 
-        deepgramSocket.onmessage = async (msg) => {
-          const data = JSON.parse(msg.data);
+        source.connect(audioWorkletNode);
+        // Connect to a silent destination to keep the worklet running
+        audioWorkletNode.connect(audioContext.destination);
 
-          // Handle utterance end (user stopped speaking)
-          if (data.type === 'UtteranceEnd') {
-            console.log('🔇 Utterance ended');
-            const textToProcess = isSpeakingResponse ? interruptTranscript.trim() : finalTranscript.trim();
-            if (textToProcess) {
-              if (isSpeakingResponse) {
-                // This was an interrupt - stop avatar and process
-                console.log('⚡ Processing interrupt:', textToProcess);
-                await handleInterrupt(textToProcess);
-                interruptTranscript = '';
-              } else {
-                processVoiceInput(textToProcess, false);
-              }
-              finalTranscript = '';
-            }
-            return;
-          }
-
-          const transcript = data.channel?.alternatives?.[0]?.transcript || '';
-          if (!transcript) return;
-
-          // Check if this is an interrupt (user speaking while avatar talks)
-          if (isSpeakingResponse) {
-            console.log(`⚡ INTERRUPT detected: "${transcript}"`);
-            if (data.is_final) {
-              interruptTranscript += ' ' + transcript;
-              // Trigger interrupt immediately on any final transcript
-              console.log('⚡ Triggering interrupt NOW');
-              await handleInterrupt(interruptTranscript.trim());
-              interruptTranscript = '';
-            } else {
-              // Show interim in input field
-              document.getElementById('input').value = '⚡ ' + transcript;
-            }
-            return;
-          }
-
-          console.log(`🎤 ${data.is_final ? 'FINAL' : 'interim'}: "${transcript}"`);
-
-          if (data.is_final) {
-            finalTranscript += ' ' + transcript;
-            document.getElementById('input').value = finalTranscript.trim();
-
-            // Clear any existing timeout
-            clearTimeout(silenceTimeout);
-
-            // Set timeout to process after 800ms of silence (faster response)
-            silenceTimeout = setTimeout(() => {
-              if (finalTranscript.trim() && !isSpeakingResponse) {
-                processVoiceInput(finalTranscript.trim(), false);
-                finalTranscript = '';
-              }
-            }, 800);
-          } else {
-            // Show interim
-            document.getElementById('input').value = finalTranscript + ' ' + transcript;
-          }
-        };
-
-        deepgramSocket.onerror = (e) => {
-          console.error('❌ Deepgram error:', e);
-          updateVoiceStatus('muted');
-        };
-
-        deepgramSocket.onclose = (e) => {
-          console.log('Deepgram closed:', e.code, e.reason);
-          isListening = false;
-          if (window._mediaRecorder?.state === 'recording') {
-            window._mediaRecorder.stop();
-          }
-          // Always try to restart unless explicitly muted
-          if (document.getElementById('mic-btn').textContent !== '🔇') {
-            console.log('🔄 Restarting Deepgram in 1s...');
-            setTimeout(startListening, 1000);
-          }
-        };
+        isListening = true;
+        updateVoiceStatus('listening');
+        console.log('✅ Audio pipeline started (16kHz PCM → backend)');
 
       } catch (e) {
-        console.error('❌ Failed to start listening:', e);
+        console.error('❌ Failed to start audio pipeline:', e);
         updateVoiceStatus('muted');
       }
     }
 
-    function stopListening() {
-      console.log('🛑 Stopping listening...');
+    function stopAudioPipeline() {
+      console.log('🛑 Stopping audio pipeline...');
       isListening = false;
-      clearTimeout(silenceTimeout);
 
-      if (window._mediaRecorder?.state === 'recording') {
-        window._mediaRecorder.stop();
-        window._mediaRecorder = null;
+      if (audioWorkletNode) {
+        audioWorkletNode.disconnect();
+        audioWorkletNode = null;
       }
       if (mediaStream) {
         mediaStream.getTracks().forEach(t => t.stop());
         mediaStream = null;
       }
-      if (deepgramSocket?.readyState === WebSocket.OPEN) {
-        deepgramSocket.close();
+      if (audioContext) {
+        audioContext.close().catch(() => {});
+        audioContext = null;
       }
-      deepgramSocket = null;
-    }
-
-    // Handle interrupt - INSTANTLY stop avatar audio and process new input
-    async function handleInterrupt(text) {
-      if (!text || !avatar) return;
-
-      console.log('⚡ INTERRUPT:', text);
-
-      // INSTANT: Mute the video element to stop audio immediately
-      const video = document.getElementById('avatar-video');
-      if (video) video.muted = true;
-
-      // Try to stop avatar via API (but don't wait for it)
-      avatar.interrupt().catch(() => {});
-
-      // Unmute after a brief moment (avatar will have new speech)
-      setTimeout(() => {
-        if (video) video.muted = false;
-      }, 500);
-
-      // Process the interrupt immediately
-      isSpeakingResponse = false;
-      interruptTranscript = '';
-      finalTranscript = '';
-      processVoiceInput(text, true);
-    }
-
-    async function processVoiceInput(text, wasInterrupted = false) {
-      if (!text || !avatar) return;
-      if (isSpeakingResponse && !wasInterrupted) return;
-
-      console.log('📝 Processing:', text, wasInterrupted ? '(interrupt)' : '');
-
-      // Set speaking flag but DON'T stop listening - we want to hear interrupts
-      isSpeakingResponse = true;
-      updateVoiceStatus('thinking');
-
-      addMessage('student', text);
-      conversationHistory.push({ role: 'student', text });
-      document.getElementById('input').value = '';
-
-      try {
-        // Get LLM response (with meeting context!)
-        console.log('🧠 Calling LLM...', wasInterrupted ? '(interrupt mode)' : '');
-        const llmRes = await fetch(backendUrl + '/api/tutor-response', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: text,
-            student_name: studentName,
-            history: conversationHistory,
-            was_interrupted: wasInterrupted
-          })
-        });
-
-        let response;
-        if (llmRes.ok) {
-          const data = await llmRes.json();
-          response = data.response;
-          console.log('🤖 LLM response:', response);
-        } else {
-          response = "I'm sorry, I had trouble understanding. Could you repeat that?";
-        }
-
-        addMessage('avatar', response);
-        conversationHistory.push({ role: 'avatar', text: response });
-
-        updateVoiceStatus('speaking');
-
-        // Make avatar speak
-        console.log('🗣️ Avatar speaking...');
-        await avatar.speak({
-          text: response,
-          taskType: 'talk',
-          taskMode: 'sync',
-        });
-        console.log('✅ Avatar done speaking');
-
-      } catch (err) {
-        console.error('❌ Voice processing error:', err);
-        addMessage('avatar', "Sorry, there was an error. Please try again.");
-        // Reset state on error
-        isSpeakingResponse = false;
-        updateVoiceStatus('listening');
+      if (audioWs?.readyState === WebSocket.OPEN) {
+        audioWs.close();
       }
-      // Note: isSpeakingResponse is reset by AVATAR_STOP_TALKING event
+      audioWs = null;
     }
+
+    // Aliases for backward compat with explainer video code
+    const startListening = startAudioPipeline;
+    const stopListening = stopAudioPipeline;
 
     // Toggle mic button (mute/unmute)
     window.toggleMic = function() {
-      if (isListening) {
-        stopListening();
-        isSpeakingResponse = true;  // Prevent auto-restart
+      if (isListening && !isMuted) {
+        isMuted = true;
+        stopAudioPipeline();
         updateVoiceStatus('muted');
         document.getElementById('mic-btn').textContent = '🔇';
       } else {
-        isSpeakingResponse = false;
+        isMuted = false;
         document.getElementById('mic-btn').textContent = '🎤';
-        startListening();
+        startAudioPipeline();
       }
     }
 
