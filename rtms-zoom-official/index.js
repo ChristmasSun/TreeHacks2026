@@ -140,6 +140,38 @@ app.get('/', (req, res) => {
   res.render('index', { websocket_url: config.frontendWssUrl });
 });
 
+// OAuth callback for Zoom app installation
+app.get('/oauth/callback', (req, res) => {
+  const { code, error } = req.query;
+
+  if (error) {
+    return res.status(400).send(`
+      <html>
+        <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+          <h1>Installation Failed</h1>
+          <p>Error: ${error}</p>
+          <p>Please try again or contact support.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  if (code) {
+    console.log('[OAuth] Zoom app installed successfully (auth code received)');
+  }
+
+  res.send(`
+    <html>
+      <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h1>Quiz Bot Installed Successfully!</h1>
+        <p>The quiz bot has been added to your Zoom account.</p>
+        <p>You can now use <code>/quiz</code> in any Zoom Team Chat to start a quiz.</p>
+        <p>You can close this window.</p>
+      </body>
+    </html>
+  `);
+});
+
 // API endpoint to get accumulated transcripts for a meeting
 app.get('/api/transcripts/:meetingId', (req, res) => {
   const meetingId = req.params.meetingId;
