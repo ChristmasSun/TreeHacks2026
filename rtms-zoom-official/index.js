@@ -15,6 +15,59 @@ import { chatWithOpenRouter } from './chatWithOpenrouter.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// S2S OAuth - Get access token to call Zoom APIs
+async function getS2SAccessToken() {
+  const credentials = Buffer.from(`${config.s2sClientId}:${config.s2sClientSecret}`).toString('base64');
+  const response = await fetch(`https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${config.accountId}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+  });
+  const data = await response.json();
+  if (!data.access_token) {
+    console.error('[S2S] Failed to get token:', data);
+    return null;
+  }
+  return data.access_token;
+}
+
+// Start RTMS for a meeting via API
+async function startRTMSForMeeting(meetingId) {
+  if (!config.s2sClientId || !config.s2sClientSecret || !config.accountId) {
+    console.log('[RTMS] S2S credentials not configured, skipping auto-start');
+    return false;
+  }
+
+  try {
+    const token = await getS2SAccessToken();
+    if (!token) return false;
+
+    console.log(`[RTMS] Starting RTMS for meeting: ${meetingId}`);
+
+    const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}/rtms/start`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      console.log(`[RTMS] Successfully started RTMS for meeting: ${meetingId}`);
+      return true;
+    } else {
+      const error = await response.text();
+      console.error(`[RTMS] Failed to start RTMS:`, error);
+      return false;
+    }
+  } catch (error) {
+    console.error('[RTMS] Error starting RTMS:', error);
+    return false;
+  }
+}
+
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 const { MEDIA_PARAMS } = RTMSManager;
@@ -73,8 +126,18 @@ if (config.mode === 'webhook') {
     app: app
   });
 
-  webhookManager.on('event', (event, payload) => {
+  webhookManager.on('event', async (event, payload) => {
     console.log('[Consumer] Webhook Event:', event);
+
+    // Auto-start RTMS when a meeting starts
+    if (event === 'meeting.started') {
+      const meetingId = payload?.object?.id;
+      if (meetingId) {
+        console.log(`[Consumer] Meeting started, auto-starting RTMS for: ${meetingId}`);
+        await startRTMSForMeeting(meetingId);
+      }
+    }
+
     RTMSManager.handleEvent(event, payload);
   });
 
