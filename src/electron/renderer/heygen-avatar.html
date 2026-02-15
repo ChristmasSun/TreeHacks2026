@@ -324,7 +324,15 @@
 
     const params = new URLSearchParams(window.location.search);
     const studentName = params.get('name') || 'Student';
-    const backendUrl = params.get('backend') || 'http://127.0.0.1:8000';
+    const rawBackend = params.get('backend') || 'http://127.0.0.1:8000';
+    // Validate backend URL is a safe HTTP(S) origin
+    const backendUrl = (() => {
+      try {
+        const u = new URL(rawBackend);
+        if (u.protocol === 'http:' || u.protocol === 'https:') return u.origin;
+      } catch {}
+      return 'http://127.0.0.1:8000';
+    })();
 
     document.getElementById('student-name').textContent = studentName;
 
@@ -765,6 +773,8 @@
     // Listen for play-explainer-video message from Electron main process
     // Since this is loaded with contextIsolation: false, we can use window events
     window.addEventListener('message', (event) => {
+      // Only accept messages from same origin (Electron main process)
+      if (event.origin !== 'file://' && event.origin !== window.location.origin) return;
       if (event.data && event.data.type === 'play-explainer-video') {
         playExplainerVideo(event.data.payload);
       }
