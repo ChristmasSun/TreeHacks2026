@@ -75,6 +75,52 @@ async def get_chatbot_token() -> str:
         return _cached_token
 
 
+async def get_user_jid(email: str) -> Optional[str]:
+    """
+    Get a user's JID (Jabber ID) from their email address.
+    The JID is needed to send chatbot messages to a specific user.
+
+    Args:
+        email: User's email address
+
+    Returns:
+        User's JID or None if not found
+    """
+    token = await get_chatbot_token()
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # First try to get user info
+        response = await client.get(
+            f"https://api.zoom.us/v2/users/{email}",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            # The JID is typically the user's ID + @xmpp.zoom.us
+            user_id = data.get("id")
+            if user_id:
+                jid = f"{user_id}@xmpp.zoom.us"
+                logger.info(f"Got JID for {email}: {jid}")
+                return jid
+
+        # Try chat users endpoint as fallback
+        response = await client.get(
+            f"https://api.zoom.us/v2/chat/users/{email}",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            jid = data.get("jid")
+            if jid:
+                logger.info(f"Got JID from chat API for {email}: {jid}")
+                return jid
+
+        logger.warning(f"Could not get JID for {email}")
+        return None
+
+
 def verify_webhook_signature(
     body: bytes,
     signature: str,

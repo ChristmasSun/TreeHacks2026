@@ -15,6 +15,9 @@ import { chatWithOpenRouter } from './chatWithOpenrouter.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Track participants we've already DM'd (to avoid spamming)
+const dmSentToParticipants = new Map(); // meetingId -> Set of userIds
+
 // S2S OAuth - Get access token to call Zoom APIs
 let cachedToken = null;
 let tokenExpiry = 0;
@@ -79,6 +82,75 @@ async function sendMeetingChatMessage(meetingId, message) {
   } catch (error) {
     console.error('[Chat] Error sending message:', error);
     return false;
+  }
+}
+
+// Get user email from Zoom API
+async function getUserEmail(userId) {
+  try {
+    const token = await getS2SAccessToken();
+    if (!token) return null;
+
+    const response = await fetch(`https://api.zoom.us/v2/users/${userId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.email;
+    }
+    return null;
+  } catch (error) {
+    console.error('[User] Error getting user email:', error);
+    return null;
+  }
+}
+
+// DM a participant via the chatbot (through Python backend)
+async function dmParticipantQuiz(meetingId, userId, userName) {
+  // Check if we already DM'd this user in this meeting
+  if (!dmSentToParticipants.has(meetingId)) {
+    dmSentToParticipants.set(meetingId, new Set());
+  }
+  if (dmSentToParticipants.get(meetingId).has(userId)) {
+    console.log(`[Quiz DM] Already sent to ${userName} (${userId})`);
+    return;
+  }
+
+  console.log(`[Quiz DM] Sending quiz DM to ${userName} (${userId})`);
+
+  // Get user's email to look up their JID
+  const email = await getUserEmail(userId);
+  if (!email) {
+    console.log(`[Quiz DM] Could not get email for ${userName}`);
+    return;
+  }
+
+  // Mark as sent
+  dmSentToParticipants.get(meetingId).add(userId);
+
+  // Call Python backend to send DM via chatbot
+  const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+  try {
+    const response = await fetch(`${backendUrl}/api/quiz/dm-participant`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meeting_id: meetingId,
+        user_id: userId,
+        user_name: userName,
+        user_email: email
+      })
+    });
+
+    if (response.ok) {
+      console.log(`[Quiz DM] Successfully triggered DM to ${userName} (${email})`);
+    } else {
+      const error = await response.text();
+      console.error(`[Quiz DM] Failed: ${error}`);
+    }
+  } catch (error) {
+    console.error(`[Quiz DM] Error: ${error.message}`);
   }
 }
 
@@ -319,6 +391,11 @@ setupFrontendWss(server);
 
 RTMSManager.on('transcript', async ({ text, userId, userName, timestamp, meetingId, streamId, productType }) => {
   console.log(`Transcript [${userName}]: ${text}`);
+
+  // Auto-DM quiz to participants when they first speak
+  if (userId && userName) {
+    dmParticipantQuiz(meetingId, userId, userName);
+  }
 
   // Accumulate transcript
   if (!meetingTranscripts.has(meetingId)) {
