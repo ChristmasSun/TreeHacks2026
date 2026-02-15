@@ -169,7 +169,7 @@ class HeyGenLiteClient:
         if self._session_token:
             try:
                 import httpx
-                base_url = os.environ.get("LIVEAVATAR_BASE_URL", "https://api.heygen.com")
+                base_url = os.environ.get("LIVEAVATAR_BASE_URL", "https://api.liveavatar.com")
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     await client.post(
                         f"{base_url}/v1/sessions/stop",

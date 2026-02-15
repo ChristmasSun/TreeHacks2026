@@ -424,7 +424,7 @@ async def get_tutor_audio(data: dict):
 
 
 # HeyGen access token endpoint for frontend SDK
-LIVEAVATAR_BASE_URL = os.getenv("LIVEAVATAR_BASE_URL", "https://api.heygen.com")
+LIVEAVATAR_BASE_URL = os.getenv("LIVEAVATAR_BASE_URL", "https://api.liveavatar.com")
 
 
 @app.get("/api/heygen-token")
@@ -433,10 +433,10 @@ async def get_heygen_token():
     import httpx
     import sys
 
-    api_key = os.getenv("HEYGEN_API_KEY")
-    avatar_id = os.getenv("HEYGEN_AVATAR_ID", "default")
+    api_key = os.getenv("LIVEAVATAR_API_KEY") or os.getenv("HEYGEN_API_KEY")
+    avatar_id = os.getenv("LIVEAVATAR_AVATAR_ID", os.getenv("HEYGEN_AVATAR_ID", "513fd1b7-7ef9-466d-9af2-344e51eeb833"))
     if not api_key:
-        raise HTTPException(status_code=500, detail="HeyGen/LiveAvatar API key not configured")
+        raise HTTPException(status_code=500, detail="LiveAvatar API key not configured")
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -576,15 +576,6 @@ async def audio_websocket_endpoint(websocket: WebSocket):
     frame_count = 0
 
     try:
-        # Connect to Deepgram
-        try:
-            deepgram_ws = await connect_deepgram()
-            session.deepgram_ws = deepgram_ws
-            reader_task = asyncio.create_task(deepgram_reader(deepgram_ws, session))
-            print("[Audio WS] Deepgram connected, reader task started", file=sys.stderr, flush=True)
-        except Exception as e:
-            print(f"[Audio WS] Deepgram connection FAILED: {e}", file=sys.stderr, flush=True)
-            await websocket.send_json({"type": "error", "message": f"Deepgram connection failed: {e}"})
 
         while True:
             msg = await websocket.receive()
@@ -607,18 +598,33 @@ async def audio_websocket_endpoint(websocket: WebSocket):
                         session.meeting_id = data.get("meeting_id")
                         logger.info(f"Audio session started for {session.student_name}")
 
-                        # Connect to LiveAvatar LITE WebSocket if URL provided
+                        # Connect Deepgram first (fast) so audio frames aren't dropped
+                        try:
+                            deepgram_ws = await connect_deepgram()
+                            session.deepgram_ws = deepgram_ws
+                            reader_task = asyncio.create_task(deepgram_reader(deepgram_ws, session))
+                            print("[Audio WS] Deepgram connected", file=sys.stderr, flush=True)
+                        except Exception as e:
+                            print(f"[Audio WS] Deepgram connection FAILED: {e}", file=sys.stderr, flush=True)
+                            await websocket.send_json({"type": "error", "message": f"Deepgram connection failed: {e}"})
+
+                        # Connect to LiveAvatar LITE in background (don't block message loop)
                         heygen_ws_url = data.get("heygen_ws_url")
                         session_token = data.get("session_token", "")
                         if heygen_ws_url:
-                            try:
-                                await heygen_lite.connect(heygen_ws_url, session_token=session_token)
-                                print(f"[Audio WS] LiveAvatar LITE connected for {session.student_name}", file=sys.stderr, flush=True)
-                            except Exception as e:
-                                print(f"[Audio WS] LiveAvatar LITE connection FAILED: {e}", file=sys.stderr, flush=True)
-                                import traceback
-                                traceback.print_exc()
-                                await websocket.send_json({"type": "error", "message": f"LiveAvatar LITE connection failed: {e}"})
+                            async def _connect_lite():
+                                try:
+                                    await heygen_lite.connect(heygen_ws_url, session_token=session_token)
+                                    print(f"[Audio WS] LiveAvatar LITE connected for {session.student_name}", file=sys.stderr, flush=True)
+                                except Exception as e:
+                                    print(f"[Audio WS] LiveAvatar LITE connection FAILED: {e}", file=sys.stderr, flush=True)
+                                    import traceback
+                                    traceback.print_exc()
+                                    try:
+                                        await websocket.send_json({"type": "error", "message": f"LiveAvatar LITE connection failed: {e}"})
+                                    except Exception:
+                                        pass
+                            asyncio.create_task(_connect_lite())
 
                     elif msg_type == "avatar_speaking":
                         session.on_avatar_speaking()
