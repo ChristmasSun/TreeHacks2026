@@ -232,6 +232,13 @@ const rtmsConfig = {
       contentType: MEDIA_PARAMS.MEDIA_CONTENT_TYPE_TEXT,
       language: MEDIA_PARAMS.LANGUAGE_ID_ENGLISH,
     },
+    video: {
+      contentType: MEDIA_PARAMS.MEDIA_CONTENT_TYPE_RAW_VIDEO,
+      codec: MEDIA_PARAMS.MEDIA_PAYLOAD_TYPE_JPG,
+      resolution: MEDIA_PARAMS.MEDIA_RESOLUTION_SD,
+      dataOpt: MEDIA_PARAMS.MEDIA_DATA_OPTION_VIDEO_MIXED_GALLERY_VIEW,
+      fps: 1, // 1 frame per second to reduce load on expression service
+    },
   }
 };
 
@@ -600,6 +607,62 @@ RTMSManager.on('meeting.rtms_started', (payload) => {
 
 RTMSManager.on('meeting.rtms_stopped', (payload) => {
   console.log(`RTMS stopped for meeting ${payload.meeting_uuid}`);
+});
+
+// Handle video frames for demeanor/expression analysis
+// Throttle: only forward frames at ~1 per 3 seconds to avoid overwhelming the expression service
+const lastVideoFrameTime = new Map(); // meetingId -> timestamp
+const VIDEO_THROTTLE_MS = 3000;
+
+RTMSManager.on('video', async ({ buffer, userId, userName, timestamp, meetingId, streamId, productType }) => {
+  const now = Date.now();
+  const lastTime = lastVideoFrameTime.get(meetingId) || 0;
+
+  // Throttle frames
+  if (now - lastTime < VIDEO_THROTTLE_MS) {
+    return;
+  }
+  lastVideoFrameTime.set(meetingId, now);
+
+  console.log(`[Video] Frame received for meeting ${meetingId} (${buffer.length} bytes)`);
+
+  // Forward to expression analysis service
+  try {
+    const formData = new FormData();
+    formData.append('frame', new Blob([buffer], { type: 'image/jpeg' }), 'frame.jpg');
+    formData.append('meeting_id', meetingId);
+    formData.append('timestamp', String(timestamp || now));
+
+    const response = await fetch(`${config.expressionServiceUrl}/api/frames`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      if (result.status === 'ok') {
+        console.log(`[Video] Expression analysis: ${result.faces} faces, dominant: ${Object.entries(result.emotions || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'unknown'}`);
+
+        // Broadcast expression data to frontend
+        broadcastToFrontendClients({
+          type: 'expression',
+          data: {
+            meetingId,
+            faces: result.faces,
+            emotions: result.emotions,
+            timestamp: now,
+          }
+        });
+      }
+    } else {
+      console.log(`[Video] Expression service returned: ${response.status}`);
+    }
+  } catch (error) {
+    // Don't spam logs if expression service is not running
+    if (!error.message.includes('ECONNREFUSED')) {
+      console.error('[Video] Error sending frame to expression service:', error.message);
+    }
+  }
 });
 
 await RTMSManager.start();
