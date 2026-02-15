@@ -314,64 +314,41 @@
   </div>
 
   <script type="module">
-    import StreamingAvatar, { AvatarQuality, StreamingEvents } from 'https://esm.sh/@heygen/streaming-avatar@latest';
-    
-    let avatar = null;
+    import { Room, RoomEvent } from 'https://esm.sh/livekit-client@latest';
+
+    let livekitRoom = null;
     let sessionId = null;
+    let heygenWsUrl = null;   // Passed to backend for LITE audio control
+    let sessionToken = null;  // Session token for LITE WebSocket auth + session stop
     let conversationHistory = [];
 
-    // Track whether current speech was interrupted by user
-    let _wasInterrupted = false;
-
-    /**
-     * Speak text through HeyGen avatar using async mode.
-     * Completion is handled by AVATAR_STOP_TALKING event, not by awaiting.
-     */
-    async function avatarSpeak(text) {
-      _wasInterrupted = false;
-      // Interrupt any current speech first
-      try { await avatar.interrupt(); } catch(e) {}
-
-      console.log('🔊 avatarSpeak:', text.slice(0, 60));
-      try {
-        await avatar.speak({
-          text,
-          taskType: 'repeat',
-          taskMode: 'async',
-        });
-      } catch (e) {
-        console.error('Avatar speak error:', e);
-      }
-      // Don't wait for completion — AVATAR_STOP_TALKING event handles it
-    }
-    
     const params = new URLSearchParams(window.location.search);
     const studentName = params.get('name') || 'Student';
     const backendUrl = params.get('backend') || 'http://127.0.0.1:8000';
-    
+
     document.getElementById('student-name').textContent = studentName;
-    
+
     window.closeWindow = function() {
-      if (avatar) avatar.stopAvatar().catch(() => {});
+      if (livekitRoom) livekitRoom.disconnect().catch(() => {});
       window.close();
     }
-    
+
     function showLoading() {
       document.getElementById('loading').classList.remove('hidden');
       document.getElementById('error').classList.add('hidden');
     }
-    
+
     function showError(msg) {
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('error').classList.remove('hidden');
       document.getElementById('error-msg').textContent = msg;
     }
-    
+
     function hideOverlays() {
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('error').classList.add('hidden');
     }
-    
+
     function addMessage(role, text) {
       const div = document.createElement('div');
       div.className = 'message ' + role;
@@ -379,97 +356,103 @@
       document.getElementById('messages').appendChild(div);
       document.getElementById('messages').scrollTop = 9999;
     }
-    
-    async function fetchToken() {
-      const res = await fetch(backendUrl + '/api/heygen-token');
-      if (!res.ok) throw new Error('Failed to get token');
-      const data = await res.json();
-      return data.token;
-    }
-    
+
     window.startAvatar = async function() {
       showLoading();
-      
+
       try {
-        const token = await fetchToken();
-        console.log('Got token');
-        
-        avatar = new StreamingAvatar({ token });
-        
-        avatar.on(StreamingEvents.STREAM_READY, async (event) => {
-          console.log('Stream ready');
+        // 1. Create LITE session via backend
+        console.log('Fetching HeyGen LITE session...');
+        const res = await fetch(backendUrl + '/api/heygen-token');
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error('HeyGen session failed: ' + errText);
+        }
+        const sessionData = await res.json();
+        console.log('Session data:', JSON.stringify(sessionData, null, 2));
+
+        sessionId = sessionData.session_id;
+        heygenWsUrl = sessionData.ws_url;
+        sessionToken = sessionData.session_token;
+        const livekitUrl = sessionData.livekit_url;
+        const accessToken = sessionData.livekit_token;
+
+        console.log('Got LITE session:', sessionId, 'ws_url:', heygenWsUrl ? 'yes' : 'MISSING', 'livekit:', livekitUrl ? 'yes' : 'MISSING');
+
+        // Start audio pipeline immediately (don't wait for video)
+        // Kill any stale reconnect loops, then start fresh
+        shouldReconnect = false;
+        stopAudioPipeline();
+
+        const greeting = 'Hello ' + studentName + '! I\'m your AI Professor. I have context from the lecture, so just ask me anything!';
+        addMessage('avatar', greeting);
+        document.getElementById('input').disabled = false;
+        document.getElementById('send-btn').disabled = false;
+        document.getElementById('mic-btn').disabled = false;
+
+        shouldReconnect = true;
+        startAudioPipeline();
+
+        if (!livekitUrl || !accessToken) {
+          console.warn('Missing LiveKit credentials — video will not load, but audio still works');
+          return;
+        }
+
+        // 2. Connect to LiveKit for video rendering
+        livekitRoom = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+
+        livekitRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          console.log('Track subscribed:', track.kind, participant.identity);
           const video = document.getElementById('avatar-video');
-          video.srcObject = event.detail;
 
-          // Ensure audio plays by unmuting video element
-          video.muted = false;
-          video.volume = 1.0;
+          if (track.kind === 'video') {
+            track.attach(video);
+            video.muted = false;
+            video.volume = 1.0;
+            hideOverlays();
+          }
 
-          video.play().catch(console.error);
-          hideOverlays();
-
-          document.getElementById('input').disabled = false;
-          document.getElementById('send-btn').disabled = false;
-          document.getElementById('mic-btn').disabled = false;
-
-          // Greeting message
-          const greeting = 'Hello ' + studentName + '! I\'m your AI Professor. I have context from the lecture, so just ask me anything!';
-          addMessage('avatar', greeting);
-
-          // Start audio pipeline immediately (don't wait for greeting to finish)
-          // The speak queue handles interruption if user talks during greeting
-          console.log('🎤 Starting audio pipeline...');
-          startAudioPipeline();
-
-          // Speak greeting (will be interrupted if user speaks first)
-          isSpeakingResponse = true;
-          await avatarSpeak(greeting);
-          isSpeakingResponse = false;
-        });
-        
-        avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-          console.log('Disconnected');
-          showError('Connection lost');
-        });
-        
-        avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
-          document.getElementById('speaking').classList.remove('hidden');
-          console.log('🗣️ Avatar started talking');
-        });
-
-        avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-          document.getElementById('speaking').classList.add('hidden');
-          console.log('🗣️ Avatar stopped talking (interrupted=' + _wasInterrupted + ')');
-
-          if (!_wasInterrupted && isSpeakingResponse) {
-            // Natural end of speech — tell backend
-            isSpeakingResponse = false;
-            if (audioWs?.readyState === WebSocket.OPEN) {
-              audioWs.send(JSON.stringify({ type: 'avatar_done' }));
-            }
-            updateVoiceStatus('listening');
+          if (track.kind === 'audio') {
+            track.attach(video);
           }
         });
-        
-        const session = await avatar.createStartAvatar({
-          quality: AvatarQuality.Medium,
-          avatarName: 'default',
+
+        livekitRoom.on(RoomEvent.Disconnected, () => {
+          console.log('LiveKit disconnected');
         });
-        
-        console.log('Session started:', session);
-        sessionId = session.session_id;
-        
+
+        await livekitRoom.connect(livekitUrl, accessToken);
+        console.log('Connected to LiveKit room');
+
+        // Check for existing tracks (in case they arrived before our listener)
+        livekitRoom.remoteParticipants.forEach((participant) => {
+          participant.trackPublications.forEach((publication) => {
+            if (publication.track) {
+              const video = document.getElementById('avatar-video');
+              if (publication.track.kind === 'video') {
+                publication.track.attach(video);
+                hideOverlays();
+              }
+              if (publication.track.kind === 'audio') {
+                publication.track.attach(video);
+              }
+            }
+          });
+        });
+
       } catch (err) {
-        console.error('Full error:', err);
-        console.error('Error details:', JSON.stringify(err, null, 2));
+        console.error('Avatar start error:', err);
         showError(err.message || 'Failed to connect');
       }
     }
-    
+
     window.sendMessage = async function() {
       const input = document.getElementById('input');
       const text = input.value.trim();
-      if (!text || !avatar) return;
+      if (!text) return;
 
       input.value = '';
       addMessage('student', text);
@@ -496,12 +479,12 @@
 
         addMessage('avatar', response);
         conversationHistory.push({ role: 'avatar', text: response });
-        await avatarSpeak(response);
+        // TTS + lip-sync handled by backend via LITE mode (no avatarSpeak needed)
       } catch (err) {
-        console.error('Speak error:', err);
+        console.error('Send error:', err);
       }
     }
-    
+
     document.getElementById('input').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') window.sendMessage();
     });
@@ -510,6 +493,7 @@
     let isListening = false;
     let isSpeakingResponse = false;
     let isMuted = false;
+    let shouldReconnect = false;  // Only reconnect after startAvatar succeeds
     let audioWs = null;
     let audioContext = null;
     let audioWorkletNode = null;
@@ -521,22 +505,22 @@
 
       switch(status) {
         case 'listening':
-          statusEl.textContent = '🎤 Listening...';
+          statusEl.textContent = 'Listening...';
           statusEl.style.background = '#10b981';
           micBtn.classList.add('recording');
           break;
         case 'thinking':
-          statusEl.textContent = '🤔 Thinking...';
+          statusEl.textContent = 'Thinking...';
           statusEl.style.background = '#f59e0b';
           micBtn.classList.remove('recording');
           break;
         case 'speaking':
-          statusEl.textContent = '🗣️ Speaking (interrupt anytime)';
+          statusEl.textContent = 'Speaking (interrupt anytime)';
           statusEl.style.background = '#3b82f6';
           micBtn.classList.add('recording');
           break;
         case 'muted':
-          statusEl.textContent = '🔇 Muted';
+          statusEl.textContent = 'Muted';
           statusEl.style.background = '#6b7280';
           micBtn.classList.remove('recording');
           break;
@@ -593,7 +577,14 @@
     const processorDataUrl = 'data:application/javascript;base64,' + btoa(pcmProcessorCode);
 
     async function startAudioPipeline() {
-      console.log('🎤 Starting audio pipeline...');
+      // Kill any existing connection first
+      if (audioWs) {
+        const old = audioWs;
+        audioWs = null;
+        try { old.onclose = null; old.close(); } catch(e) {}
+      }
+
+      console.log('Starting audio pipeline... heygenWsUrl=' + (heygenWsUrl ? 'set' : 'MISSING'));
 
       try {
         // 1. Connect WebSocket to backend audio endpoint
@@ -601,11 +592,13 @@
         audioWs = new WebSocket(wsUrl);
 
         audioWs.onopen = () => {
-          console.log('✅ Audio WebSocket connected');
+          console.log('Audio WebSocket connected');
           audioWs.send(JSON.stringify({
             type: 'start_session',
             student_name: studentName,
             meeting_id: params.get('meeting_id'),
+            heygen_ws_url: heygenWsUrl,    // Backend connects to LITE WebSocket
+            session_token: sessionToken,    // Auth for LITE session
           }));
         };
 
@@ -625,8 +618,8 @@
               break;
 
             case 'vad_speech_end':
-              // Backend processed: VAD end → speculative LLM response
-              console.log('🗣️ Got response:', data.response);
+              // Backend processed: VAD end → LLM response → PocketTTS → HeyGen LITE
+              console.log('Got response:', data.response);
 
               addMessage('student', data.transcript);
               addMessage('avatar', data.response);
@@ -636,23 +629,23 @@
 
               updateVoiceStatus('speaking');
               isSpeakingResponse = true;
+              document.getElementById('speaking').classList.remove('hidden');
+              // Backend handles TTS + HeyGen LITE audio — no avatarSpeak() needed
+              break;
 
-              // Tell backend avatar is about to speak
-              if (audioWs?.readyState === WebSocket.OPEN) {
-                audioWs.send(JSON.stringify({ type: 'avatar_speaking' }));
-              }
-
-              // Fire-and-forget: avatar.speak() in async mode
-              // Completion handled by AVATAR_STOP_TALKING event
-              avatarSpeak(data.response);
+            case 'avatar_done':
+              // Backend signals avatar finished speaking (via HeyGen LITE speak_ended)
+              console.log('Avatar done speaking');
+              isSpeakingResponse = false;
+              document.getElementById('speaking').classList.add('hidden');
+              updateVoiceStatus('listening');
               break;
 
             case 'interrupt_detected':
-              // Backend VAD detected speech during avatar playback — stop and listen
-              console.log('⚡ Interrupt detected — stopping avatar');
-              _wasInterrupted = true;
+              // Backend VAD detected speech during avatar playback
+              console.log('Interrupt detected');
               isSpeakingResponse = false;
-              try { await avatar.interrupt(); } catch(e) {}
+              document.getElementById('speaking').classList.add('hidden');
               updateVoiceStatus('listening');
               break;
 
@@ -669,8 +662,8 @@
         audioWs.onclose = (e) => {
           console.log('Audio WebSocket closed:', e.code);
           isListening = false;
-          if (!isMuted) {
-            console.log('🔄 Reconnecting audio pipeline in 2s...');
+          if (shouldReconnect && !isMuted) {
+            console.log('Reconnecting audio pipeline in 2s...');
             setTimeout(startAudioPipeline, 2000);
           }
         };
@@ -709,16 +702,16 @@
 
         isListening = true;
         updateVoiceStatus('listening');
-        console.log('✅ Audio pipeline started (16kHz PCM → backend)');
+        console.log('Audio pipeline started (16kHz PCM -> backend)');
 
       } catch (e) {
-        console.error('❌ Failed to start audio pipeline:', e);
+        console.error('Failed to start audio pipeline:', e);
         updateVoiceStatus('muted');
       }
     }
 
     function stopAudioPipeline() {
-      console.log('🛑 Stopping audio pipeline...');
+      console.log('Stopping audio pipeline...');
       isListening = false;
 
       if (audioWorkletNode) {
@@ -733,8 +726,9 @@
         audioContext.close().catch(() => {});
         audioContext = null;
       }
-      if (audioWs?.readyState === WebSocket.OPEN) {
-        audioWs.close();
+      if (audioWs) {
+        audioWs.onclose = null;  // Prevent reconnect from firing
+        try { audioWs.close(); } catch(e) {}
       }
       audioWs = null;
     }
@@ -749,10 +743,10 @@
         isMuted = true;
         stopAudioPipeline();
         updateVoiceStatus('muted');
-        document.getElementById('mic-btn').textContent = '🔇';
+        document.getElementById('mic-btn').textContent = 'Muted';
       } else {
         isMuted = false;
-        document.getElementById('mic-btn').textContent = '🎤';
+        document.getElementById('mic-btn').textContent = 'Mic';
         startAudioPipeline();
       }
     }

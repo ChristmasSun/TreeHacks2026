@@ -34,6 +34,7 @@ from services.tts_service import text_to_speech
 from services.rtms_transcription_service import RTMSTranscriptionService
 from services.pocket_tts_service import PocketTTSService
 from services.tutor_session import TutorSession, SessionState
+from services.heygen_lite_client import HeyGenLiteClient
 from services.heygen_controller import HeyGenController
 from services.zoom_chatbot_service import (
     verify_webhook_signature,
@@ -423,27 +424,76 @@ async def get_tutor_audio(data: dict):
 
 
 # HeyGen access token endpoint for frontend SDK
+LIVEAVATAR_BASE_URL = os.getenv("LIVEAVATAR_BASE_URL", "https://api.heygen.com")
+
+
 @app.get("/api/heygen-token")
 async def get_heygen_token():
-    """Generate HeyGen access token for frontend SDK"""
+    """Create LiveAvatar LITE (Custom) mode session and return connection info."""
     import httpx
-    import os
-    
+    import sys
+
     api_key = os.getenv("HEYGEN_API_KEY")
+    avatar_id = os.getenv("HEYGEN_AVATAR_ID", "default")
     if not api_key:
-        raise HTTPException(status_code=500, detail="HeyGen API key not configured")
-    
+        raise HTTPException(status_code=500, detail="HeyGen/LiveAvatar API key not configured")
+
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.heygen.com/v1/streaming.create_token",
-                headers={"X-Api-Key": api_key}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Step 1: Create session token with CUSTOM mode
+            print(f"[LiveAvatar] Creating session token (mode=CUSTOM, avatar={avatar_id})...", file=sys.stderr, flush=True)
+            token_res = await client.post(
+                f"{LIVEAVATAR_BASE_URL}/v1/sessions/token",
+                headers={
+                    "X-API-KEY": api_key,
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "mode": "CUSTOM",
+                    "avatar_id": avatar_id,
+                },
             )
-            response.raise_for_status()
-            data = response.json()
-            return {"token": data.get("data", {}).get("token")}
+            token_res.raise_for_status()
+            token_data = token_res.json().get("data", {})
+            session_token = token_data.get("session_token", "")
+            session_id = token_data.get("session_id", "")
+            print(f"[LiveAvatar] Got session token for session {session_id}", file=sys.stderr, flush=True)
+            print(f"[LiveAvatar] Token response: {json.dumps(token_data)}", file=sys.stderr, flush=True)
+
+            # Step 2: Start the session
+            print(f"[LiveAvatar] Starting session {session_id}...", file=sys.stderr, flush=True)
+            start_res = await client.post(
+                f"{LIVEAVATAR_BASE_URL}/v1/sessions/start",
+                headers={
+                    "Authorization": f"Bearer {session_token}",
+                    "Content-Type": "application/json",
+                },
+            )
+            start_res.raise_for_status()
+            session_data = start_res.json().get("data", {})
+            print(f"[LiveAvatar] Start response: {json.dumps(session_data)}", file=sys.stderr, flush=True)
+
+            ws_url = session_data.get("ws_url", "")
+            livekit_url = session_data.get("livekit_url", "")
+            livekit_token = session_data.get("livekit_client_token", "")
+
+            print(f"[LiveAvatar] Session {session_id} started", file=sys.stderr, flush=True)
+            print(f"[LiveAvatar] LITE WS: {ws_url[:80]}..." if ws_url else "[LiveAvatar] LITE WS: MISSING", file=sys.stderr, flush=True)
+            print(f"[LiveAvatar] LiveKit URL: {livekit_url}", file=sys.stderr, flush=True)
+
+            return {
+                "session_token": session_token,
+                "session_id": session_id,
+                "ws_url": ws_url,
+                "livekit_url": livekit_url,
+                "livekit_token": livekit_token,
+            }
+    except httpx.HTTPStatusError as e:
+        body = e.response.text
+        logger.error(f"LiveAvatar API error {e.response.status_code}: {body}")
+        raise HTTPException(status_code=500, detail=f"LiveAvatar API error: {body}")
     except Exception as e:
-        logger.error(f"Failed to get HeyGen token: {e}")
+        logger.error(f"Failed to create LiveAvatar LITE session: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -514,9 +564,11 @@ async def audio_websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("[Audio WS] Client connected", file=sys.stderr, flush=True)
 
+    heygen_lite = HeyGenLiteClient()
     session = TutorSession(
         websocket=websocket,
         tts_service=pocket_tts_service,
+        heygen_lite=heygen_lite,
     )
 
     deepgram_ws = None
@@ -554,6 +606,19 @@ async def audio_websocket_endpoint(websocket: WebSocket):
                         session.student_name = data.get("student_name", "Student")
                         session.meeting_id = data.get("meeting_id")
                         logger.info(f"Audio session started for {session.student_name}")
+
+                        # Connect to LiveAvatar LITE WebSocket if URL provided
+                        heygen_ws_url = data.get("heygen_ws_url")
+                        session_token = data.get("session_token", "")
+                        if heygen_ws_url:
+                            try:
+                                await heygen_lite.connect(heygen_ws_url, session_token=session_token)
+                                print(f"[Audio WS] LiveAvatar LITE connected for {session.student_name}", file=sys.stderr, flush=True)
+                            except Exception as e:
+                                print(f"[Audio WS] LiveAvatar LITE connection FAILED: {e}", file=sys.stderr, flush=True)
+                                import traceback
+                                traceback.print_exc()
+                                await websocket.send_json({"type": "error", "message": f"LiveAvatar LITE connection failed: {e}"})
 
                     elif msg_type == "avatar_speaking":
                         session.on_avatar_speaking()

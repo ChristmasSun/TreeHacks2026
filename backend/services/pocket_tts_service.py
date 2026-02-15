@@ -7,6 +7,7 @@ import logging
 import os
 import uuid
 
+import numpy as np
 import scipy.io.wavfile
 from pocket_tts import TTSModel
 
@@ -73,7 +74,39 @@ class PocketTTSService:
             "content_type": "audio/wav",
         }
 
-    def _generate_sync(self, text: str, output_path: str):
-        """Synchronous generation (runs in thread pool)."""
+    async def generate_pcm(self, text: str) -> np.ndarray:
+        """
+        Generate int16 PCM audio at 24kHz from text.
+        Returns numpy array of int16 samples ready for HeyGen LITE.
+        No file I/O — stays in memory for minimum latency.
+        """
+        import sys
+        import time
+
+        if not self._model:
+            raise RuntimeError("Pocket TTS model not loaded — call load() first")
+
+        print(f"[TTS] Generating PCM for: {text[:60]}...", file=sys.stderr, flush=True)
+        t0 = time.monotonic()
+
+        loop = asyncio.get_event_loop()
+        audio_float = await loop.run_in_executor(None, self._generate_audio_sync, text)
+
+        # Convert float32 [-1.0, 1.0] to int16 [-32768, 32767]
+        int16_audio = np.clip(audio_float * 32767, -32768, 32767).astype(np.int16)
+
+        elapsed = time.monotonic() - t0
+        duration_s = len(int16_audio) / self._model.sample_rate
+        print(f"[TTS] Generated PCM ({duration_s:.1f}s audio) in {elapsed:.2f}s", file=sys.stderr, flush=True)
+
+        return int16_audio
+
+    def _generate_audio_sync(self, text: str) -> np.ndarray:
+        """Generate raw float32 audio tensor (runs in thread pool)."""
         audio = self._model.generate_audio(self._voice_state, text)
-        scipy.io.wavfile.write(output_path, self._model.sample_rate, audio.numpy())
+        return audio.numpy()
+
+    def _generate_sync(self, text: str, output_path: str):
+        """Synchronous WAV generation (runs in thread pool)."""
+        audio_float = self._generate_audio_sync(text)
+        scipy.io.wavfile.write(output_path, self._model.sample_rate, audio_float)

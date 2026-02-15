@@ -11,6 +11,7 @@ from typing import Optional
 
 from fastapi import WebSocket
 
+from services.heygen_lite_client import HeyGenLiteClient
 from services.llm_service import build_system_prompt, fetch_rtms_transcripts, active_meeting_id, get_lecture_transcript
 from services.speculative_llm import SpeculativeLLM
 from services.vad_service import VADService
@@ -39,6 +40,7 @@ class TutorSession:
         self,
         websocket: WebSocket,
         tts_service: PocketTTSService,
+        heygen_lite: HeyGenLiteClient,
         student_name: str = "Student",
         meeting_id: Optional[str] = None,
     ):
@@ -52,6 +54,10 @@ class TutorSession:
         self.vad = VADService()
         self.speculative = SpeculativeLLM()
         self.tts = tts_service
+        self.heygen_lite = heygen_lite
+
+        # Wire HeyGen LITE callbacks
+        self.heygen_lite._on_speak_ended = self._on_heygen_speak_ended
 
         # Deepgram WebSocket (set externally after connection)
         self.deepgram_ws = None
@@ -131,6 +137,10 @@ class TutorSession:
             # User interrupted — stop avatar immediately and listen
             print(f"[Session] INTERRUPT — stopping avatar, switching to listen", file=sys.stderr, flush=True)
             try:
+                await self.heygen_lite.interrupt()
+            except Exception as e:
+                print(f"[Session] HeyGen interrupt error: {e}", file=sys.stderr, flush=True)
+            try:
                 await self.ws.send_json({"type": "interrupt_detected"})
             except Exception:
                 pass
@@ -170,19 +180,44 @@ class TutorSession:
         self.conversation_history.append({"role": "student", "text": final_text})
         self.conversation_history.append({"role": "avatar", "text": response})
 
-        # Send to frontend
+        # Send text to frontend for chat display
         await self.ws.send_json({
             "type": "vad_speech_end",
             "transcript": final_text,
             "response": response,
         })
 
+        # Generate TTS audio and send to HeyGen LITE for lip-sync
         self.state = SessionState.AVATAR_SPEAKING
         self.vad.set_mode("interrupt")
-        print(f"[Session] Response sent → AVATAR_SPEAKING", file=sys.stderr, flush=True)
+
+        try:
+            pcm_audio = await self.tts.generate_pcm(response)
+            await self.heygen_lite.send_audio(pcm_audio)
+        except Exception as e:
+            print(f"[Session] TTS/HeyGen LITE error: {e}", file=sys.stderr, flush=True)
+            # Fall back to idle if audio pipeline fails
+            self.state = SessionState.IDLE
+            self.vad.set_mode("speech")
+            return
+
+        print(f"[Session] Audio sent to HeyGen → AVATAR_SPEAKING", file=sys.stderr, flush=True)
+
+    async def _on_heygen_speak_ended(self):
+        """Called by HeyGen LITE when avatar finishes speaking."""
+        print("[Session] HeyGen speak_ended → IDLE", file=sys.stderr, flush=True)
+        self.state = SessionState.IDLE
+        self.vad.set_mode("speech")
+        self.vad.reset()
+        self._accumulated_transcript = ""
+        self._latest_interim = ""
+        try:
+            await self.ws.send_json({"type": "avatar_done"})
+        except Exception:
+            pass
 
     def on_avatar_done(self):
-        """Called when frontend signals avatar finished speaking."""
+        """Called when frontend signals avatar finished speaking (legacy fallback)."""
         self.state = SessionState.IDLE
         self.vad.set_mode("speech")
         self.vad.reset()
@@ -190,7 +225,7 @@ class TutorSession:
         self._latest_interim = ""
 
     def on_avatar_speaking(self):
-        """Called when frontend signals avatar started speaking."""
+        """Called when frontend signals avatar started speaking (legacy fallback)."""
         self.state = SessionState.AVATAR_SPEAKING
         self.vad.set_mode("interrupt")
 
@@ -215,3 +250,5 @@ class TutorSession:
     async def close(self):
         """Cleanup session resources."""
         await self.speculative.close()
+        if self.heygen_lite:
+            await self.heygen_lite.close()
