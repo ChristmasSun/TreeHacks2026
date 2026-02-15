@@ -434,7 +434,7 @@ async def get_heygen_token():
     import sys
 
     api_key = os.getenv("LIVEAVATAR_API_KEY") or os.getenv("HEYGEN_API_KEY")
-    avatar_id = os.getenv("LIVEAVATAR_AVATAR_ID", os.getenv("HEYGEN_AVATAR_ID", "513fd1b7-7ef9-466d-9af2-344e51eeb833"))
+    avatar_id = os.getenv("LIVEAVATAR_AVATAR_ID", os.getenv("HEYGEN_AVATAR_ID", "dd73ea75-1218-4ef3-92ce-606d5f7fbc0a"))
     if not api_key:
         raise HTTPException(status_code=500, detail="LiveAvatar API key not configured")
 
