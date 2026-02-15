@@ -97,6 +97,17 @@ export class WebSocketClient extends EventEmitter {
     }, this.reconnectInterval);
   }
 
+  reconnect(newUrl: string) {
+    console.log(`Reconnecting to new URL: ${newUrl}`);
+    this.disconnect();
+    this.url = newUrl;
+    this.connect();
+  }
+
+  getUrl(): string {
+    return this.url;
+  }
+
   isConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }

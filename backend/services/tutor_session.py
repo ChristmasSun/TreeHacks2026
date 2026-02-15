@@ -11,7 +11,7 @@ from typing import Optional
 
 from fastapi import WebSocket
 
-from services.llm_service import build_system_prompt, fetch_rtms_transcripts, active_meeting_id
+from services.llm_service import build_system_prompt, fetch_rtms_transcripts, active_meeting_id, get_lecture_transcript
 from services.speculative_llm import SpeculativeLLM
 from services.vad_service import VADService
 from services.pocket_tts_service import PocketTTSService
@@ -195,12 +195,19 @@ class TutorSession:
         self.vad.set_mode("interrupt")
 
     async def _build_prompt(self) -> str:
-        """Build system prompt with meeting context."""
+        """Build system prompt with lecture transcript + live RTMS context."""
         transcript_context = ""
+        # Include pre-loaded lecture transcript as primary context
+        lecture_text = get_lecture_transcript()
+        if lecture_text:
+            transcript_context = lecture_text[-3000:]
+        # Append live RTMS transcript as supplementary context
         try:
-            transcript_context = await fetch_rtms_transcripts(
+            live_context = await fetch_rtms_transcripts(
                 self.meeting_id or active_meeting_id
             )
+            if live_context:
+                transcript_context += f"\n\nLIVE CLASS DISCUSSION:\n{live_context[-1500:]}"
         except Exception:
             pass
         return build_system_prompt(self.student_name, transcript_context, False)

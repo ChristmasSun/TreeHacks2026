@@ -1,6 +1,6 @@
 """
 LLM Service for AI Tutoring
-Uses Cerebras gpt-oss-120b with live RTMS transcript context
+Uses Cerebras gpt-oss-120b with lecture transcript + live RTMS context
 """
 import os
 import logging
@@ -18,6 +18,9 @@ lecture_context: dict = {
     "key_points": "",
     "additional_notes": ""
 }
+
+# Pre-loaded YouTube lecture transcript (set via /api/lecture/load)
+lecture_transcript: str = ""
 
 # Store active meeting ID for context
 active_meeting_id: Optional[str] = None
@@ -37,6 +40,18 @@ def set_lecture_context(topic: str, key_points: str, notes: str = ""):
 def get_lecture_context() -> dict:
     """Get current lecture context"""
     return lecture_context
+
+
+def set_lecture_transcript(text: str):
+    """Set the pre-loaded lecture transcript from YouTube pipeline output"""
+    global lecture_transcript
+    lecture_transcript = text
+    logger.info(f"Lecture transcript loaded: {len(text)} chars")
+
+
+def get_lecture_transcript() -> str:
+    """Get the pre-loaded lecture transcript"""
+    return lecture_transcript
 
 
 def set_active_meeting(meeting_id: str):
@@ -114,10 +129,14 @@ async def generate_tutoring_response(
     Returns:
         AI tutor response
     """
-    # Fetch live transcript context from RTMS
-    transcript_context = await fetch_rtms_transcripts(meeting_id or active_meeting_id)
-    if transcript_context:
-        logger.info(f"Using live transcript context ({len(transcript_context)} chars)")
+    # Combine pre-loaded lecture transcript with live RTMS context
+    transcript_context = ""
+    if lecture_transcript:
+        transcript_context = lecture_transcript[-3000:]
+    live_context = await fetch_rtms_transcripts(meeting_id or active_meeting_id)
+    if live_context:
+        transcript_context += f"\n\nLIVE CLASS DISCUSSION:\n{live_context[-1500:]}"
+        logger.info(f"Using combined context ({len(transcript_context)} chars)")
 
     cerebras_key = os.getenv("CEREBRAS_API_KEY")
 
@@ -140,10 +159,9 @@ def build_system_prompt(student_name: str, transcript_context: str = "", was_int
 
     transcript_section = ""
     if transcript_context:
-        # Only use last 2000 chars for speed
         transcript_section = f"""
-LECTURE CONTEXT:
-{transcript_context[-2000:]}
+LECTURE & CLASS CONTEXT:
+{transcript_context[-3000:]}
 """
 
     interrupt_note = "The student interrupted - briefly acknowledge and answer their new question." if was_interrupted else ""

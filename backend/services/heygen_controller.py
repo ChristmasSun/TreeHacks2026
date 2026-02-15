@@ -8,7 +8,6 @@ import asyncio
 from datetime import datetime
 
 from integrations.heygen_api_adapter import HeyGenAPIAdapter
-from services.zoom_bot_service_client import ZoomBotServiceClient
 from models.models import Professor, Student, BreakoutRoom
 
 logger = logging.getLogger(__name__)
@@ -23,10 +22,8 @@ class HeyGenController:
     def __init__(
         self,
         heygen_adapter: Optional[HeyGenAPIAdapter] = None,
-        bot_service_client: Optional[ZoomBotServiceClient] = None
     ):
         self.heygen = heygen_adapter or HeyGenAPIAdapter()
-        self.bot_service = bot_service_client or ZoomBotServiceClient()
         self.active_sessions: Dict[str, Dict[str, Any]] = {}  # room_id -> session_data
 
     async def validate_connection(self) -> bool:
@@ -301,10 +298,6 @@ class HeyGenController:
         session_id = session_data["session_id"]
 
         try:
-            # Disconnect Zoom bot if active
-            if "bot_id" in session_data:
-                await self.disconnect_avatar_from_zoom(room_id)
-
             # Stop HeyGen avatar session
             await self.heygen.stop_avatar_session(session_id)
             del self.active_sessions[str(room_id)]
@@ -465,116 +458,3 @@ class HeyGenController:
         """Get all active avatar sessions"""
         return self.active_sessions.copy()
 
-    # ==================== Zoom Integration ====================
-
-    async def connect_avatar_to_zoom(
-        self,
-        room_id: int,
-        meeting_number: str,
-        bot_name: str,
-        passcode: Optional[str] = None,
-        breakout_room_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Connect HeyGen avatar to Zoom via bot service
-
-        Creates a Zoom bot that joins the meeting and acts as the avatar's
-        voice in the Zoom room. Audio routing:
-        - Zoom audio -> Bot -> Python backend -> Deepgram (transcription)
-        - HeyGen response -> Bot -> Zoom audio (avatar speaks)
-
-        Args:
-            room_id: Internal breakout room ID
-            meeting_number: Zoom meeting number
-            bot_name: Display name for bot (e.g., "AI Professor - Alice")
-            passcode: Meeting passcode (optional)
-            breakout_room_id: Zoom breakout room ID to join (optional)
-
-        Returns:
-            Bot creation status
-        """
-        try:
-            session_data = self.active_sessions.get(str(room_id))
-            if not session_data:
-                raise ValueError(f"No active avatar session for room {room_id}")
-
-            heygen_session_id = session_data["session_id"]
-
-            # Create bot via Node.js bot service
-            bot_id = await self.bot_service.create_bot(
-                meeting_number=meeting_number,
-                bot_name=bot_name,
-                room_id=room_id,
-                passcode=passcode,
-                heygen_session_id=heygen_session_id
-            )
-
-            # Update session with bot info
-            self.active_sessions[str(room_id)]["bot_id"] = bot_id
-            self.active_sessions[str(room_id)]["zoom_status"] = "joined"
-
-            logger.info(f"Bot {bot_id} connected to Zoom for room {room_id}")
-
-            # If breakout room specified, move bot there
-            if breakout_room_id:
-                await self.bot_service.move_bot_to_breakout_room(bot_id, breakout_room_id)
-                self.active_sessions[str(room_id)]["breakout_room_id"] = breakout_room_id
-
-            return {
-                "status": "connected",
-                "bot_id": bot_id,
-                "room_id": room_id,
-                "heygen_session_id": heygen_session_id,
-                "zoom_meeting": meeting_number
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to connect avatar to Zoom for room {room_id}: {e}")
-            raise
-
-    async def play_avatar_audio_in_zoom(
-        self,
-        room_id: int,
-        audio_data: bytes
-    ) -> None:
-        """
-        Play HeyGen avatar audio through Zoom bot
-
-        Args:
-            room_id: Breakout room ID
-            audio_data: Audio bytes from HeyGen
-        """
-        session_data = self.active_sessions.get(str(room_id))
-        if not session_data or "bot_id" not in session_data:
-            raise ValueError(f"No Zoom bot active for room {room_id}")
-
-        bot_id = session_data["bot_id"]
-        await self.bot_service.play_audio(bot_id, audio_data)
-
-    async def disconnect_avatar_from_zoom(self, room_id: int) -> bool:
-        """
-        Disconnect Zoom bot for avatar
-
-        Args:
-            room_id: Breakout room ID
-
-        Returns:
-            Success status
-        """
-        session_data = self.active_sessions.get(str(room_id))
-        if not session_data or "bot_id" not in session_data:
-            logger.warning(f"No Zoom bot to disconnect for room {room_id}")
-            return False
-
-        bot_id = session_data["bot_id"]
-
-        try:
-            await self.bot_service.remove_bot(bot_id)
-            self.active_sessions[str(room_id)]["zoom_status"] = "disconnected"
-            del self.active_sessions[str(room_id)]["bot_id"]
-            logger.info(f"Disconnected bot {bot_id} from room {room_id}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to disconnect bot from room {room_id}: {e}")
-            return False

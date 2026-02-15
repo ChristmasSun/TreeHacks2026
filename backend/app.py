@@ -24,9 +24,11 @@ from services.llm_service import (
     generate_tutoring_response,
     set_lecture_context,
     get_lecture_context,
+    set_lecture_transcript,
+    get_lecture_transcript,
     set_active_meeting,
     get_active_meeting,
-    fetch_rtms_transcripts
+    fetch_rtms_transcripts,
 )
 from services.tts_service import text_to_speech
 from services.rtms_transcription_service import RTMSTranscriptionService
@@ -38,6 +40,7 @@ from services.zoom_chatbot_service import (
     generate_url_validation_response,
     send_quiz_intro,
     parse_answer_value,
+    get_user_jid,
 )
 from services.quiz_generator import (
     generate_quiz_from_concepts,
@@ -217,6 +220,112 @@ async def set_context(data: dict):
     set_lecture_context(topic, key_points, notes)
     logger.info(f"Lecture context updated: {topic}")
     return {"success": True, "context": get_lecture_context()}
+
+
+# ============ Lecture Content Loading ============
+
+@app.post("/api/lecture/load")
+async def load_lecture_content(data: dict):
+    """
+    Load pre-processed pipeline output (transcript, concepts, videos).
+    Called by professor to set up content for the session.
+    """
+    from pathlib import Path
+    import shutil
+
+    output_dir = data.get("output_dir", "")
+    if not output_dir:
+        raise HTTPException(status_code=400, detail="Missing output_dir")
+
+    output_path = Path(output_dir)
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {output_dir}")
+
+    # 1. Load transcript
+    transcript_path = output_path / "transcript.txt"
+    transcript_length = 0
+    if transcript_path.exists():
+        transcript_text = transcript_path.read_text(encoding="utf-8")
+        set_lecture_transcript(transcript_text)
+        transcript_length = len(transcript_text)
+        logger.info(f"Loaded transcript: {transcript_length} chars")
+
+    # 2. Load concepts via existing mapping utility
+    mapping = load_concept_video_mapping(output_dir)
+    concepts_count = len(mapping)
+
+    # 3. Copy videos to static directory
+    global quiz_video_output_dir
+    quiz_video_output_dir = output_dir
+
+    videos_static_dir = Path(static_dir) / "videos"
+    os.makedirs(videos_static_dir, exist_ok=True)
+    videos_count = 0
+
+    for concept, info in mapping.items():
+        video_path = info.get("video_path")
+        if video_path and Path(video_path).exists():
+            video_filename = Path(video_path).name
+            dest_path = videos_static_dir / video_filename
+            if not dest_path.exists():
+                shutil.copy2(video_path, dest_path)
+            videos_count += 1
+
+    # 4. Set lecture context from directory name
+    topic = output_path.name.replace("-", " ").replace("_", " ").title()
+    set_lecture_context(topic=topic, key_points=f"{concepts_count} concepts loaded", notes=output_dir)
+
+    logger.info(f"Lecture loaded: {topic} ({concepts_count} concepts, {videos_count} videos)")
+
+    return {
+        "success": True,
+        "topic": topic,
+        "transcript_length": transcript_length,
+        "concepts_count": concepts_count,
+        "videos_count": videos_count,
+        "output_dir": output_dir,
+    }
+
+
+@app.get("/api/lecture/status")
+async def lecture_status():
+    """Get current lecture loading state."""
+    from pathlib import Path
+
+    transcript = get_lecture_transcript()
+    mapping = load_concept_video_mapping(quiz_video_output_dir) if quiz_video_output_dir else {}
+
+    videos_dir = Path(static_dir) / "videos"
+    video_count = len(list(videos_dir.glob("*.mp4"))) if videos_dir.exists() else 0
+
+    return {
+        "transcript_loaded": len(transcript) > 0,
+        "transcript_length": len(transcript),
+        "concepts_count": len(mapping),
+        "videos_count": video_count,
+        "output_dir": quiz_video_output_dir,
+        "context": get_lecture_context(),
+    }
+
+
+@app.get("/api/server-info")
+async def server_info():
+    """Return server LAN IP and port for student connection."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        ip = "127.0.0.1"
+
+    return {
+        "server_ip": ip,
+        "port": 8000,
+        "ws_url": f"ws://{ip}:8000/ws",
+        "api_url": f"http://{ip}:8000",
+    }
 
 
 # Tutor Response Endpoint
@@ -516,14 +625,7 @@ async def handle_message(message_type: str, payload: dict, db: AsyncSession) -> 
     """
     handlers = {
         "PING": handle_ping,
-        "CREATE_SESSION": handle_create_session,
-        "END_SESSION": handle_end_session,
-        "GET_SESSION_STATUS": handle_get_session_status,
         "GET_STUDENTS": handle_get_students,
-        "VALIDATE_ZOOM": handle_validate_zoom,
-        "GET_ROOM_TRANSCRIPTS": handle_get_room_transcripts,
-        "VALIDATE_DEEPGRAM": handle_validate_deepgram,
-        "PROCESS_AUDIO": handle_process_audio,
         # Student client handlers
         "REGISTER_STUDENT": handle_register_student,
         "STUDENT_MESSAGE": handle_student_message,
@@ -547,104 +649,6 @@ async def handle_ping(payload: dict, db: AsyncSession) -> dict:
         "type": "PONG",
         "payload": {"timestamp": datetime.utcnow().isoformat()}
     }
-
-
-async def handle_create_session(payload: dict, db: AsyncSession) -> dict:
-    """
-    Handle session creation request
-
-    Payload:
-    {
-        "professor_id": int,
-        "student_ids": [int],
-        "topic": str,
-        "duration": int,
-        "configuration": {...}
-    }
-    """
-    try:
-        orchestrator = SessionOrchestrator(
-            on_transcript_callback=forward_transcript_to_frontend
-        )
-
-        # Create session with Zoom meeting and breakout rooms
-        result = await orchestrator.create_breakout_session(
-            db=db,
-            professor_id=payload["professor_id"],
-            student_ids=payload["student_ids"],
-            topic=payload.get("topic", "Breakout Session"),
-            duration=payload.get("duration", 20),
-            configuration=payload.get("configuration", {})
-        )
-
-        logger.info(f"Session created: {result['session_id']}")
-
-        # Broadcast to all connected clients
-        await manager.broadcast({
-            "type": "SESSION_CREATED",
-            "payload": result
-        })
-
-        return {
-            "type": "SESSION_CREATED",
-            "payload": result
-        }
-    except Exception as e:
-        logger.error(f"Error creating session: {e}")
-        return {
-            "type": "ERROR",
-            "payload": {"message": f"Failed to create session: {str(e)}"}
-        }
-
-
-async def handle_end_session(payload: dict, db: AsyncSession) -> dict:
-    """Handle session end request"""
-    try:
-        orchestrator = SessionOrchestrator()
-        session_id = payload["session_id"]
-
-        # End session and cleanup
-        result = await orchestrator.end_session(db=db, session_id=session_id)
-
-        logger.info(f"Session ended: {session_id}")
-
-        # Broadcast to all connected clients
-        await manager.broadcast({
-            "type": "SESSION_ENDED",
-            "payload": result
-        })
-
-        return {
-            "type": "SESSION_ENDED",
-            "payload": result
-        }
-    except Exception as e:
-        logger.error(f"Error ending session: {e}")
-        return {
-            "type": "ERROR",
-            "payload": {"message": f"Failed to end session: {str(e)}"}
-        }
-
-
-async def handle_get_session_status(payload: dict, db: AsyncSession) -> dict:
-    """Get current session status"""
-    try:
-        orchestrator = SessionOrchestrator()
-        session_id = payload["session_id"]
-
-        # Get detailed session status
-        result = await orchestrator.get_session_status(db=db, session_id=session_id)
-
-        return {
-            "type": "SESSION_STATUS",
-            "payload": result
-        }
-    except Exception as e:
-        logger.error(f"Error getting session status: {e}")
-        return {
-            "type": "ERROR",
-            "payload": {"message": f"Failed to get session status: {str(e)}"}
-        }
 
 
 async def handle_get_students(payload: dict, db: AsyncSession) -> dict:
@@ -675,125 +679,6 @@ async def handle_get_students(payload: dict, db: AsyncSession) -> dict:
         }
 
 
-async def handle_validate_zoom(payload: dict, db: AsyncSession) -> dict:
-    """Validate Zoom API credentials"""
-    try:
-        orchestrator = SessionOrchestrator()
-        is_valid = await orchestrator.validate_zoom_connection()
-
-        return {
-            "type": "ZOOM_VALIDATION",
-            "payload": {
-                "valid": is_valid,
-                "message": "Zoom credentials are valid" if is_valid else "Zoom credentials are invalid"
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error validating Zoom: {e}")
-        return {
-            "type": "ERROR",
-            "payload": {"message": f"Failed to validate Zoom: {str(e)}"}
-        }
-
-
-async def handle_validate_deepgram(payload: dict, db: AsyncSession) -> dict:
-    """Validate Deepgram API credentials"""
-    try:
-        orchestrator = SessionOrchestrator()
-        is_valid = await orchestrator.validate_transcription_service()
-
-        return {
-            "type": "DEEPGRAM_VALIDATION",
-            "payload": {
-                "valid": is_valid,
-                "message": "Deepgram credentials are valid" if is_valid else "Deepgram credentials are invalid"
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error validating Deepgram: {e}")
-        return {
-            "type": "ERROR",
-            "payload": {"message": f"Failed to validate Deepgram: {str(e)}"}
-        }
-
-
-async def handle_get_room_transcripts(payload: dict, db: AsyncSession) -> dict:
-    """
-    Get transcripts for a specific room
-
-    Payload:
-    {
-        "room_id": int,
-        "limit": int (optional, default 100)
-    }
-    """
-    try:
-        room_id = payload["room_id"]
-        limit = payload.get("limit", 100)
-
-        orchestrator = SessionOrchestrator()
-        transcripts = await orchestrator.get_room_transcripts(
-            db=db,
-            room_id=room_id,
-            limit=limit
-        )
-
-        return {
-            "type": "ROOM_TRANSCRIPTS",
-            "payload": {
-                "room_id": room_id,
-                "transcripts": transcripts,
-                "count": len(transcripts)
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error getting room transcripts: {e}")
-        return {
-            "type": "ERROR",
-            "payload": {"message": f"Failed to get room transcripts: {str(e)}"}
-        }
-
-
-async def handle_process_audio(payload: dict, db: AsyncSession) -> dict:
-    """
-    Process audio chunk from HeyGen avatar
-
-    Payload:
-    {
-        "room_id": int,
-        "audio_data": bytes (base64 encoded)
-    }
-    """
-    try:
-        import base64
-
-        room_id = payload["room_id"]
-        audio_data_b64 = payload["audio_data"]
-
-        # Decode base64 audio data
-        audio_data = base64.b64decode(audio_data_b64)
-
-        orchestrator = SessionOrchestrator()
-        success = await orchestrator.process_audio_for_room(
-            room_id=room_id,
-            audio_data=audio_data
-        )
-
-        return {
-            "type": "AUDIO_PROCESSED",
-            "payload": {
-                "room_id": room_id,
-                "success": success
-            }
-        }
-    except Exception as e:
-        logger.error(f"Error processing audio: {e}")
-        return {
-            "type": "ERROR",
-            "payload": {"message": f"Failed to process audio: {str(e)}"}
-        }
-
-
 # ============ Student Client Handlers ============
 
 # Store registered students by email for quick lookup
@@ -813,11 +698,13 @@ async def handle_register_student(payload: dict, db: AsyncSession) -> dict:
     try:
         name = payload.get("name", "Student")
         email = payload.get("email", "")
+        zoom_email = payload.get("zoom_email", email)
 
         # Store student registration
         registered_students[email] = {
             "name": name,
             "email": email,
+            "zoom_email": zoom_email,
             "registered_at": datetime.utcnow().isoformat(),
             "avatar_session": None
         }
@@ -968,54 +855,6 @@ async def handle_trigger_breakout(payload: dict, db: AsyncSession) -> dict:
             "type": "ERROR",
             "payload": {"message": f"Failed to trigger breakout: {str(e)}"}
         }
-
-
-# ============ Zoom Webhook Endpoint ============
-
-@app.post("/webhook/zoom")
-async def zoom_webhook(request_data: dict):
-    """
-    Handle Zoom webhook events (breakout rooms, meeting events, etc.)
-
-    Events we care about:
-    - meeting.participant_joined_breakout_room
-    - meeting.breakout_room_opened
-    - meeting.rtms_started
-    - meeting.rtms_stopped
-    """
-    try:
-        event = request_data.get("event", "")
-        payload = request_data.get("payload", {})
-
-        logger.info(f"Zoom webhook received: {event}")
-
-        if event == "meeting.breakout_room_opened":
-            # Breakout rooms were opened by the host
-            logger.info("Breakout rooms opened! Notifying students...")
-
-            # Trigger avatar creation and notification
-            await handle_trigger_breakout({}, None)
-
-        elif event == "meeting.participant_joined_breakout_room":
-            # A participant joined a breakout room
-            participant = payload.get("object", {}).get("participant", {})
-            room_name = payload.get("object", {}).get("breakout_room", {}).get("name", "")
-
-            logger.info(f"Participant {participant.get('user_name')} joined breakout room: {room_name}")
-
-        elif event in ["meeting.rtms_started", "webinar.rtms_started", "session.rtms_started"]:
-            # Forward to Node.js RTMS service
-            logger.info(f"RTMS started event received, forwarding to RTMS service")
-            # Note: The Node.js service will handle the actual RTMS connection
-            # This webhook acknowledgment is required by Zoom
-
-        elif event in ["meeting.rtms_stopped", "webinar.rtms_stopped", "session.rtms_stopped"]:
-            logger.info(f"RTMS stopped event received")
-
-        return {"status": "received"}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"status": "error", "message": str(e)}
 
 
 # ============ Zoom Chatbot Webhook Endpoint ============
@@ -1279,339 +1118,77 @@ async def quiz_video_completed(data: dict):
     return result
 
 
-# ============ Auto-DM Quiz to Meeting Participants ============
-
-@app.post("/api/quiz/dm-participant")
-async def dm_participant_quiz(data: dict):
+@app.post("/api/quiz/launch")
+async def launch_quiz():
     """
-    DM a meeting participant with quiz intro via Team Chat chatbot.
-    Called from RTMS service when participant speaks.
+    Generate quiz from loaded lecture concepts and send to all registered students
+    via Zoom Team Chat chatbot. Called from professor dashboard.
     """
-    from services.zoom_chatbot_service import send_quiz_intro, get_user_jid
+    logger.info("Launching quiz to all registered students via Zoom Team Chat")
 
-    meeting_id = data.get("meeting_id")
-    user_id = data.get("user_id")
-    user_name = data.get("user_name", "Student")
-    user_email = data.get("user_email")
+    # Load concepts
+    mapping = load_concept_video_mapping(quiz_video_output_dir)
+    if not mapping:
+        raise HTTPException(status_code=400, detail="No lecture content loaded. Load a pipeline output first.")
 
-    if not user_email:
-        logger.warning(f"No email for user {user_name}, cannot DM")
-        return {"success": False, "error": "No email"}
+    concepts = [
+        {"concept": name, "description": info["description"], "video_path": info.get("video_path")}
+        for name, info in mapping.items()
+    ]
 
-    logger.info(f"DM quiz to {user_name} ({user_email}) from meeting {meeting_id}")
-
+    # Generate quiz
     try:
-        # Get user's JID from their email
-        jid = await get_user_jid(user_email)
-        if not jid:
-            logger.warning(f"Could not get JID for {user_email}")
-            return {"success": False, "error": "Could not get JID"}
+        quiz = await generate_quiz_from_concepts(
+            concepts=concepts,
+            num_questions=min(5, len(concepts)),
+            topic=get_lecture_context().get("topic", "Lecture Quiz")
+        )
+    except Exception as e:
+        logger.error(f"Quiz generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Quiz generation failed: {str(e)}")
 
-        # Get account_id from env (same account)
-        account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")
+    # Send to each registered student
+    account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")
+    students_sent = 0
+    errors = []
 
-        # Load concepts and generate quiz
-        mapping = load_concept_video_mapping(quiz_video_output_dir)
-        if not mapping:
-            # Send simple welcome message if no quiz content
-            from services.zoom_chatbot_service import send_text_message
-            await send_text_message(
+    for email, info in registered_students.items():
+        zoom_email = info.get("zoom_email", email)
+        try:
+            jid = await get_user_jid(zoom_email)
+            if not jid:
+                errors.append(f"No JID for {zoom_email}")
+                continue
+
+            # Create quiz session with video playback callback
+            create_quiz_session(
+                student_jid=jid,
+                account_id=account_id,
+                quiz=quiz,
+                on_play_video=trigger_video_playback,
+            )
+
+            # Send quiz intro
+            await send_quiz_intro(
                 to_jid=jid,
                 account_id=account_id,
-                text=f"Hi {user_name}! Welcome to the lecture. Quiz content will be available soon."
-            )
-            return {"success": True, "message": "Welcome sent (no quiz content)"}
-
-        # Generate quiz
-        concepts = [
-            {"concept": name, "description": info["description"], "video_path": info.get("video_path")}
-            for name, info in mapping.items()
-        ]
-
-        quiz = await generate_quiz_from_concepts(
-            concepts=concepts,
-            num_questions=min(3, len(concepts)),
-            topic="Lecture Quiz"
-        )
-
-        # Create session
-        create_quiz_session(
-            student_jid=jid,
-            account_id=account_id,
-            quiz=quiz,
-            on_play_video=trigger_video_playback
-        )
-
-        # Send quiz intro
-        await send_quiz_intro(
-            to_jid=jid,
-            account_id=account_id,
-            topic=quiz.topic,
-            num_questions=len(quiz.questions)
-        )
-
-        logger.info(f"Quiz DM sent to {user_name} ({jid})")
-        return {"success": True}
-
-    except Exception as e:
-        logger.error(f"Error DMing participant: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/quiz/dm-by-name")
-async def dm_quiz_by_name(data: dict):
-    """
-    DM a quiz to a user by their display name.
-    Fallback when we don't have their user_id.
-    """
-    from services.zoom_chatbot_service import send_text_message, get_chatbot_token
-    import httpx
-
-    meeting_id = data.get("meeting_id")
-    user_name = data.get("user_name")
-
-    logger.info(f"DM quiz by name: {user_name} from meeting {meeting_id}")
-
-    # Try to find user by searching (this is a best-effort approach)
-    try:
-        token = await get_chatbot_token()
-        account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")
-
-        # Search for user by name using Zoom API
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"https://api.zoom.us/v2/users",
-                headers={"Authorization": f"Bearer {token}"},
-                params={"status": "active", "page_size": 100}
+                topic=quiz.topic,
+                num_questions=len(quiz.questions),
             )
 
-            if response.status_code == 200:
-                users = response.json().get("users", [])
-                for user in users:
-                    # Match by display name (case-insensitive partial match)
-                    if user_name.lower() in user.get("display_name", "").lower() or \
-                       user_name.lower() in f"{user.get('first_name', '')} {user.get('last_name', '')}".lower():
-                        # Found a match
-                        user_email = user.get("email")
-                        if user_email:
-                            # Call the dm-participant endpoint
-                            return await dm_participant_quiz({
-                                "meeting_id": meeting_id,
-                                "user_id": user.get("id"),
-                                "user_name": user_name,
-                                "user_email": user_email
-                            })
+            students_sent += 1
+            logger.info(f"Quiz sent to {info['name']} ({jid})")
+        except Exception as e:
+            errors.append(f"{info['name']}: {str(e)}")
+            logger.error(f"Failed to send quiz to {email}: {e}")
 
-        return {"success": False, "error": f"Could not find user: {user_name}"}
-
-    except Exception as e:
-        logger.error(f"Error in dm-by-name: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/quiz/trigger-all")
-async def trigger_quiz_all():
-    """
-    Trigger quiz to all participants in the active meeting.
-    Called from professor dashboard.
-    """
-    import httpx
-
-    logger.info("Triggering quiz to all meeting participants")
-
-    # Get active meeting transcripts from RTMS service
-    rtms_url = os.getenv("RTMS_SERVICE_URL", "https://rtms-webhook.onrender.com")
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # Get list of active meetings
-            meetings_res = await client.get(f"{rtms_url}/api/transcripts")
-            meetings_data = meetings_res.json()
-
-            if not meetings_data.get("meetings"):
-                return {"success": False, "error": "No active meetings found"}
-
-            meeting = meetings_data["meetings"][0]
-            meeting_id = meeting["meetingId"]
-
-            # Get transcripts to find participants
-            transcripts_res = await client.get(f"{rtms_url}/api/transcripts/{meeting_id}")
-            transcripts_data = transcripts_res.json()
-
-            # Extract unique speakers
-            speakers = {}
-            for t in transcripts_data.get("transcripts", []):
-                speaker = t.get("speaker")
-                if speaker and speaker not in speakers:
-                    speakers[speaker] = True
-
-            if not speakers:
-                return {"success": False, "error": "No participants found in meeting"}
-
-            # Send quiz to each speaker via the RTMS service (which will DM them)
-            sent_count = 0
-            for speaker_name in speakers.keys():
-                try:
-                    # Trigger DM via RTMS service
-                    await client.post(
-                        f"{rtms_url}/api/trigger-quiz-dm",
-                        json={
-                            "meeting_id": meeting_id,
-                            "user_name": speaker_name
-                        }
-                    )
-                    sent_count += 1
-                except Exception as e:
-                    logger.error(f"Failed to DM {speaker_name}: {e}")
-
-            return {
-                "success": True,
-                "message": f"Triggered quiz for {sent_count} participants in meeting"
-            }
-
-    except Exception as e:
-        logger.error(f"Error triggering quiz to all: {e}")
-        return {"success": False, "error": str(e)}
-
-
-# ============ Meeting Chat Quiz Endpoints ============
-
-# Store active meeting quizzes: meeting_id -> {current_question, questions, scores}
-meeting_quizzes: dict = {}
-
-
-@app.post("/api/quiz/start-meeting-quiz")
-async def start_meeting_quiz(data: dict):
-    """
-    Start a quiz in a meeting chat.
-    Called from RTMS service when someone types /quiz.
-    """
-    meeting_id = data.get("meeting_id")
-    user_name = data.get("user_name", "Student")
-
-    if not meeting_id:
-        raise HTTPException(status_code=400, detail="Missing meeting_id")
-
-    logger.info(f"Starting meeting quiz for {meeting_id} requested by {user_name}")
-
-    try:
-        # Load concepts from video output directory
-        mapping = load_concept_video_mapping(quiz_video_output_dir)
-
-        if not mapping:
-            return {
-                "question": "No lecture content available yet. Ask your professor to set up quiz content."
-            }
-
-        # Convert to concepts list
-        concepts = [
-            {
-                "concept": name,
-                "description": info["description"],
-                "video_path": info.get("video_path")
-            }
-            for name, info in mapping.items()
-        ]
-
-        # Generate quiz
-        quiz = await generate_quiz_from_concepts(
-            concepts=concepts,
-            num_questions=min(3, len(concepts)),  # Fewer questions for meeting chat
-            topic="Lecture Quiz"
-        )
-
-        # Store quiz state for this meeting
-        meeting_quizzes[meeting_id] = {
-            "quiz": quiz,
-            "current_idx": 0,
-            "scores": {},  # user_id -> score
-            "answered": set()  # users who answered current question
-        }
-
-        # Format first question
-        q = quiz.questions[0]
-        question_text = f"📝 Question 1/{len(quiz.questions)}: {q.question_text}\n\n"
-        for opt in q.options:
-            question_text += f"{opt}\n"
-        question_text += "\n(Reply with A, B, C, or D)"
-
-        return {"question": question_text}
-
-    except Exception as e:
-        logger.error(f"Error starting meeting quiz: {e}")
-        return {"question": f"Sorry, couldn't generate quiz: {str(e)}"}
-
-
-@app.post("/api/quiz/meeting-answer")
-async def handle_meeting_answer(data: dict):
-    """
-    Handle a quiz answer from meeting chat.
-    """
-    meeting_id = data.get("meeting_id")
-    user_name = data.get("user_name", "Student")
-    user_id = data.get("user_id", user_name)
-    answer = data.get("answer", "").upper()
-
-    if not meeting_id or meeting_id not in meeting_quizzes:
-        return {"message": "No active quiz. Type /quiz to start one!"}
-
-    quiz_state = meeting_quizzes[meeting_id]
-    quiz = quiz_state["quiz"]
-    current_idx = quiz_state["current_idx"]
-
-    if current_idx >= len(quiz.questions):
-        return {"message": "Quiz already completed!"}
-
-    # Check if user already answered
-    answer_key = f"{user_id}_{current_idx}"
-    if answer_key in quiz_state["answered"]:
-        return {"message": f"{user_name}, you already answered this question!"}
-
-    quiz_state["answered"].add(answer_key)
-
-    question = quiz.questions[current_idx]
-    is_correct = answer == question.correct_answer.upper()
-
-    # Track score
-    if user_id not in quiz_state["scores"]:
-        quiz_state["scores"][user_id] = {"name": user_name, "correct": 0, "total": 0}
-    quiz_state["scores"][user_id]["total"] += 1
-    if is_correct:
-        quiz_state["scores"][user_id]["correct"] += 1
-
-    # Build response
-    if is_correct:
-        response = f"✅ {user_name} got it right! {question.explanation}"
-    else:
-        response = f"❌ {user_name}, the correct answer was {question.correct_answer}. {question.explanation}"
-
-    # Move to next question after a few answers or timeout
-    # For simplicity, move after each answer for now
-    quiz_state["current_idx"] += 1
-    quiz_state["answered"] = set()
-
-    if quiz_state["current_idx"] < len(quiz.questions):
-        # Send next question
-        next_q = quiz.questions[quiz_state["current_idx"]]
-        response += f"\n\n📝 Question {quiz_state['current_idx'] + 1}/{len(quiz.questions)}: {next_q.question_text}\n\n"
-        for opt in next_q.options:
-            response += f"{opt}\n"
-        response += "\n(Reply with A, B, C, or D)"
-    else:
-        # Quiz complete - show scores
-        response += "\n\n🎉 Quiz Complete! Scores:\n"
-        sorted_scores = sorted(
-            quiz_state["scores"].values(),
-            key=lambda x: x["correct"],
-            reverse=True
-        )
-        for i, score in enumerate(sorted_scores[:5]):
-            response += f"{i+1}. {score['name']}: {score['correct']}/{score['total']}\n"
-
-        # Clean up
-        del meeting_quizzes[meeting_id]
-
-    return {"message": response}
+    return {
+        "success": students_sent > 0,
+        "students_sent": students_sent,
+        "quiz_id": quiz.id,
+        "question_count": len(quiz.questions),
+        "errors": errors,
+    }
 
 
 @app.get("/api/quiz/session/{student_jid}")
@@ -1912,6 +1489,69 @@ async def rtms_session_transcripts(meeting_uuid: str, limit: int = 10):
     except Exception as e:
         logger.error(f"Error getting transcripts: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ Demeanor Analysis Endpoints ============
+
+from services.demeanor_service import DemeanorService
+demeanor_service = DemeanorService()
+
+
+@app.post("/api/rtms/video-frame")
+async def rtms_video_frame(data: dict):
+    """
+    Receive a video frame from RTMS Node.js service for demeanor analysis.
+
+    Body:
+    {
+        "meeting_uuid": str,
+        "user_id": str,
+        "user_name": str,
+        "timestamp": int,
+        "frame_base64": str (H.264 encoded frame)
+    }
+    """
+    import base64
+
+    try:
+        user_id = data.get("user_id", "unknown")
+        user_name = data.get("user_name", "Unknown")
+        frame_b64 = data.get("frame_base64", "")
+
+        frame_bytes = base64.b64decode(frame_b64) if frame_b64 else b""
+
+        # Run analysis
+        metrics = await demeanor_service.analyze_frame(user_id, user_name, frame_bytes)
+
+        # Broadcast to professor dashboard via WebSocket
+        await manager.broadcast({
+            "type": "DEMEANOR_UPDATE",
+            "payload": {
+                "user_id": user_id,
+                "user_name": user_name,
+                "engagement_score": metrics.engagement_score,
+                "attention": metrics.attention,
+                "expression": metrics.expression,
+                "timestamp": metrics.timestamp,
+            }
+        })
+
+        return {"status": "analyzed"}
+    except Exception as e:
+        logger.error(f"Demeanor analysis error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/demeanor/status")
+async def demeanor_status():
+    """Get current per-student engagement metrics."""
+    return demeanor_service.get_all_metrics()
+
+
+@app.get("/api/demeanor/summary")
+async def demeanor_summary():
+    """Get session-level analytics summary."""
+    return demeanor_service.get_session_summary()
 
 
 # REST API endpoints (for non-real-time operations)

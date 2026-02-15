@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Window controls
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   closeWindow: () => ipcRenderer.send('close-window'),
-  
+
   // Window state management
   setWindowState: (state: 'hidden' | 'minimized' | 'expanded') => {
     ipcRenderer.send('set-window-state', state);
@@ -31,11 +31,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       callback(state);
     });
   },
-  
+
   // Student registration (notify main process)
   studentRegistered: (student: { name: string; email: string }) => {
     ipcRenderer.send('student-registered', student);
   },
+
+  // Role selection (professor / student)
+  setRole: (role: string) => ipcRenderer.send('set-role', role),
+  getRole: () => ipcRenderer.invoke('get-role'),
+
+  // Backend URL configuration (for LAN connection)
+  setBackendUrl: (url: string) => ipcRenderer.send('set-backend-url', url),
+  getBackendUrl: () => ipcRenderer.invoke('get-backend-url'),
+
+  // Directory picker (for professor to select pipeline output)
+  selectDirectory: () => ipcRenderer.invoke('select-directory'),
 });
 
 // TypeScript type definitions for window.electronAPI
@@ -50,6 +61,11 @@ declare global {
       getWindowState: () => Promise<string>;
       onWindowStateChanged: (callback: (state: string) => void) => void;
       studentRegistered: (student: { name: string; email: string }) => void;
+      setRole: (role: string) => void;
+      getRole: () => Promise<string>;
+      setBackendUrl: (url: string) => void;
+      getBackendUrl: () => Promise<string>;
+      selectDirectory: () => Promise<string | null>;
     };
   }
 }

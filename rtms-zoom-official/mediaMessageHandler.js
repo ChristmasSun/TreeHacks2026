@@ -112,8 +112,34 @@ export async function handleMediaMessage(data, {
       case 15: // VIDEO
         if (msg.content?.data) {
           const { user_id, user_name, data: videoData, timestamp } = msg.content;
-          const buffer = Buffer.from(videoData, 'base64');
-          //console.log('Video data received');
+
+          // Throttle: forward ~1 frame per second for demeanor analysis
+          const now = Date.now();
+          if (!conn.media._lastVideoForward) conn.media._lastVideoForward = {};
+          const lastForward = conn.media._lastVideoForward[user_id] || 0;
+          if (now - lastForward >= 1000) {
+            conn.media._lastVideoForward[user_id] = now;
+
+            // Forward to Python backend for demeanor analysis
+            const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
+            try {
+              fetch(`${backendUrl}/api/rtms/video-frame`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  meeting_uuid: meetingUuid,
+                  user_id: String(user_id),
+                  user_name: user_name || 'Unknown',
+                  timestamp: timestamp,
+                  frame_base64: videoData,
+                }),
+              }).catch(err => {
+                // Non-blocking: don't interrupt RTMS stream on backend errors
+              });
+            } catch (err) {
+              // Ignore forwarding errors
+            }
+          }
         }
         break;
 
