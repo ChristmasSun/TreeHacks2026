@@ -1,15 +1,49 @@
-# Python
+# Dependencies
+node_modules/
 __pycache__/
+*.pyc
 *.py[cod]
-*.egg-info/
-dist/
-build/
-
-# Virtual environment
+.Python
+env/
+venv/
 .venv/
+*.egg-info/
+
+# Build outputs
+dist/
+out/
+build/
 
 # Environment variables
 .env
+.env.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+coverage/
+.coverage
+
+# Electron
+dist-electron/
 
 # Manim output
 media/
@@ -17,13 +51,7 @@ output/
 
 # Experiments and docs (local only)
 experiments/
-docs/
 test-output/
 
-# OS
-.DS_Store
-
-# IDE
-.idea/
-.vscode/
-*.swp
+# CLI cache
+.cli_cache.json
