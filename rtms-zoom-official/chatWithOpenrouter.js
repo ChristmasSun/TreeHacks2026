@@ -6,11 +6,17 @@ dotenv.config();
 const DEFAULT_MODEL = process.env.OPENROUTER_MODEL || 'x-ai/grok-4.1-fast';
 const SYNTHESIS_MODEL = process.env.OPENROUTER_SYNTHESIS_MODEL || 'anthropic/claude-3-haiku';
 
-// Set up OpenAI client with OpenRouter endpoint
-const openai = new OpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  baseURL: 'https://openrouter.ai/api/v1',
-});
+// Set up OpenAI client with OpenRouter endpoint (optional)
+let openai = null;
+if (process.env.OPENROUTER_API_KEY) {
+  openai = new OpenAI({
+    apiKey: process.env.OPENROUTER_API_KEY,
+    baseURL: 'https://openrouter.ai/api/v1',
+  });
+  console.log('OpenRouter LLM enabled');
+} else {
+  console.log('OpenRouter LLM disabled (no API key)');
+}
 
 /**
  * Sends a message to a model via OpenRouter
