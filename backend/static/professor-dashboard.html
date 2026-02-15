@@ -47,6 +47,54 @@
       </div>
     </div>
 
+    <!-- Lecture Context -->
+    <div class="bg-gray-800 rounded-xl p-6 mb-8">
+      <h2 class="text-xl font-semibold mb-4">📚 Lecture Context</h2>
+      <p class="text-gray-400 text-sm mb-4">Help the AI tutor understand what you taught today</p>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Topic / Subject</label>
+          <input 
+            type="text" 
+            id="context-topic" 
+            placeholder="e.g., Introduction to Photosynthesis"
+            class="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none"
+          >
+        </div>
+        
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Key Points Covered</label>
+          <textarea 
+            id="context-points" 
+            rows="3"
+            placeholder="e.g., Light reactions, Calvin cycle, chloroplast structure..."
+            class="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none resize-none"
+          ></textarea>
+        </div>
+        
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Additional Notes (optional)</label>
+          <textarea 
+            id="context-notes" 
+            rows="2"
+            placeholder="e.g., Students struggled with the electron transport chain..."
+            class="w-full bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-2 text-white focus:border-blue-500 focus:outline-none resize-none"
+          ></textarea>
+        </div>
+        
+        <div class="flex items-center gap-4">
+          <button 
+            onclick="saveContext()"
+            class="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg transition-colors"
+          >
+            💾 Save Context
+          </button>
+          <span id="context-status" class="text-sm text-gray-400"></span>
+        </div>
+      </div>
+    </div>
+
     <!-- Trigger Button -->
     <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-8 text-center">
       <h2 class="text-2xl font-bold mb-2">Ready to Start Breakout Rooms?</h2>
@@ -157,9 +205,53 @@
       }
     }
 
+    async function saveContext() {
+      const topic = document.getElementById('context-topic').value;
+      const key_points = document.getElementById('context-points').value;
+      const notes = document.getElementById('context-notes').value;
+      const status = document.getElementById('context-status');
+      
+      status.textContent = 'Saving...';
+      status.className = 'text-sm text-gray-400';
+      
+      try {
+        const res = await fetch(`${API_BASE}/api/lecture-context`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic, key_points, notes })
+        });
+        const data = await res.json();
+        
+        status.textContent = '✓ Context saved!';
+        status.className = 'text-sm text-green-400';
+        log(`Lecture context saved: ${topic}`);
+        
+        setTimeout(() => { status.textContent = ''; }, 3000);
+      } catch (err) {
+        status.textContent = '✗ Failed to save';
+        status.className = 'text-sm text-red-400';
+        log('Failed to save context: ' + err.message);
+      }
+    }
+
+    async function loadContext() {
+      try {
+        const res = await fetch(`${API_BASE}/api/lecture-context`);
+        const data = await res.json();
+        const ctx = data.context || {};
+        
+        document.getElementById('context-topic').value = ctx.topic || '';
+        document.getElementById('context-points').value = ctx.key_points || '';
+        document.getElementById('context-notes').value = ctx.additional_notes || '';
+      } catch (err) {
+        log('Failed to load context');
+      }
+    }
+
     // Initialize
     checkHealth();
     fetchStudents();
+    loadContext();
     
     // Auto-refresh every 5 seconds
     setInterval(() => {

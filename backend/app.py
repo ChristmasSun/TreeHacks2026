@@ -15,6 +15,12 @@ from datetime import datetime
 from models import get_db, init_db
 from models.models import Professor, Student, Session, BreakoutRoom
 from services.session_orchestrator import SessionOrchestrator
+from services.llm_service import (
+    generate_tutoring_response,
+    set_lecture_context,
+    get_lecture_context
+)
+from services.tts_service import text_to_speech
 
 # Configure logging
 logging.basicConfig(
@@ -92,6 +98,12 @@ async def startup_event():
     logger.info("Database initialized")
 
 
+# Mount static files for audio
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+os.makedirs(os.path.join(static_dir, "audio"), exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -109,6 +121,83 @@ async def professor_dashboard():
     """Serve professor dashboard"""
     dashboard_path = os.path.join(os.path.dirname(__file__), "static", "professor-dashboard.html")
     return FileResponse(dashboard_path, media_type="text/html")
+
+
+# Lecture Context Endpoints
+@app.get("/api/lecture-context")
+async def get_context():
+    """Get current lecture context"""
+    return {"context": get_lecture_context()}
+
+@app.post("/api/lecture-context")
+async def set_context(data: dict):
+    """Set lecture context for tutoring sessions"""
+    topic = data.get("topic", "")
+    key_points = data.get("key_points", "")
+    notes = data.get("notes", "")
+    set_lecture_context(topic, key_points, notes)
+    logger.info(f"Lecture context updated: {topic}")
+    return {"success": True, "context": get_lecture_context()}
+
+
+# Tutor Response Endpoint
+@app.post("/api/tutor-response")
+async def get_tutor_response(data: dict):
+    """Get LLM tutoring response for student question"""
+    student_message = data.get("message", "")
+    student_name = data.get("student_name", "Student")
+    history = data.get("history", [])
+    
+    response = await generate_tutoring_response(
+        student_message=student_message,
+        student_name=student_name,
+        conversation_history=history
+    )
+    return {"response": response}
+
+
+# Tutor Response with Audio (LLM + TTS pipeline)
+@app.post("/api/tutor-audio")
+async def get_tutor_audio(data: dict):
+    """
+    Full pipeline: LLM generates text -> TTS generates audio
+    Returns both text and audio URL for HeyGen lip-sync
+    """
+    student_message = data.get("message", "")
+    student_name = data.get("student_name", "Student")
+    history = data.get("history", [])
+    tts_provider = data.get("tts_provider", "openai")  # "openai" or "elevenlabs"
+    voice_id = data.get("voice_id", None)  # Optional voice ID
+    
+    # Step 1: Generate text response
+    text_response = await generate_tutoring_response(
+        student_message=student_message,
+        student_name=student_name,
+        conversation_history=history
+    )
+    
+    # Step 2: Convert to audio
+    try:
+        audio_result = await text_to_speech(
+            text=text_response,
+            voice_id=voice_id,
+            provider=tts_provider
+        )
+        
+        return {
+            "response": text_response,
+            "audio_url": audio_result["audio_url"],
+            "audio_base64": audio_result["audio_base64"],
+            "content_type": audio_result["content_type"]
+        }
+    except Exception as e:
+        logger.error(f"TTS error: {e}")
+        # Return text-only if TTS fails
+        return {
+            "response": text_response,
+            "audio_url": None,
+            "error": str(e)
+        }
 
 
 # HeyGen access token endpoint for frontend SDK
