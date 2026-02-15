@@ -8,6 +8,20 @@ TRANSCRIPTION_URL = "https://api.dedaluslabs.ai/v1/audio/transcriptions"
 TRANSCRIPTION_MODEL = "groq/whisper-large-v3"
 CHUNK_DURATION_SECS = 600  # 10 minutes per chunk
 
+_MIME_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".webm": "audio/webm",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+}
+
+
+def _audio_mime_type(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    return _MIME_TYPES.get(ext, "application/octet-stream")
+
 
 class WordTimestamp(TypedDict):
     word: str
@@ -76,7 +90,7 @@ async def transcribe_chunk(client: httpx.AsyncClient, api_key: str, chunk_path: 
         response = await client.post(
             TRANSCRIPTION_URL,
             headers={"Authorization": f"Bearer {api_key}"},
-            files={"file": (os.path.basename(chunk_path), f, "audio/mpeg")},
+            files={"file": (os.path.basename(chunk_path), f, _audio_mime_type(chunk_path))},
             data={
                 "model": TRANSCRIPTION_MODEL,
                 "language": "en",
@@ -157,7 +171,7 @@ async def timestamp_audio(
             return await c.post(
                 TRANSCRIPTION_URL,
                 headers={"Authorization": f"Bearer {api_key}"},
-                files={"file": (os.path.basename(audio_path), f, "audio/mpeg")},
+                files={"file": (os.path.basename(audio_path), f, _audio_mime_type(audio_path))},
                 data={
                     "model": TRANSCRIPTION_MODEL,
                     "language": "en",
