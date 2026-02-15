@@ -34,7 +34,7 @@ async function getS2SAccessToken() {
 }
 
 // Start RTMS for a meeting via API
-async function startRTMSForMeeting(meetingId) {
+async function startRTMSForMeeting(meetingUuid) {
   if (!config.s2sClientId || !config.s2sClientSecret || !config.accountId) {
     console.log('[RTMS] S2S credentials not configured, skipping auto-start');
     return false;
@@ -44,22 +44,31 @@ async function startRTMSForMeeting(meetingId) {
     const token = await getS2SAccessToken();
     if (!token) return false;
 
-    console.log(`[RTMS] Starting RTMS for meeting: ${meetingId}`);
+    // Double-encode UUID if it contains / or =
+    const encodedUuid = meetingUuid.includes('/') || meetingUuid.includes('=')
+      ? encodeURIComponent(encodeURIComponent(meetingUuid))
+      : meetingUuid;
 
-    const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}/rtms/start`, {
-      method: 'POST',
+    console.log(`[RTMS] Starting RTMS for meeting UUID: ${meetingUuid}`);
+
+    // Try the RTMS endpoint
+    const response = await fetch(`https://api.zoom.us/v2/meetings/${encodedUuid}/rtms`, {
+      method: 'PATCH',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({ action: 'start' })
     });
 
-    if (response.ok) {
-      console.log(`[RTMS] Successfully started RTMS for meeting: ${meetingId}`);
+    const responseText = await response.text();
+    console.log(`[RTMS] Response status: ${response.status}, body: ${responseText}`);
+
+    if (response.ok || response.status === 204) {
+      console.log(`[RTMS] Successfully started RTMS for meeting: ${meetingUuid}`);
       return true;
     } else {
-      const error = await response.text();
-      console.error(`[RTMS] Failed to start RTMS:`, error);
+      console.error(`[RTMS] Failed to start RTMS:`, responseText);
       return false;
     }
   } catch (error) {
@@ -131,10 +140,11 @@ if (config.mode === 'webhook') {
 
     // Auto-start RTMS when a meeting starts
     if (event === 'meeting.started') {
+      const meetingUuid = payload?.object?.uuid;
       const meetingId = payload?.object?.id;
-      if (meetingId) {
-        console.log(`[Consumer] Meeting started, auto-starting RTMS for: ${meetingId}`);
-        await startRTMSForMeeting(meetingId);
+      if (meetingUuid) {
+        console.log(`[Consumer] Meeting started (ID: ${meetingId}), auto-starting RTMS with UUID: ${meetingUuid}`);
+        await startRTMSForMeeting(meetingUuid);
       }
     }
 
