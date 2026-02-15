@@ -2,10 +2,12 @@
 node_modules/
 __pycache__/
 *.pyc
+*.py[cod]
 .Python
 env/
 venv/
 .venv/
+*.egg-info/
 
 # Build outputs
 dist/
@@ -42,3 +44,14 @@ coverage/
 
 # Electron
 dist-electron/
+
+# Manim output
+media/
+output/
+
+# Experiments and docs (local only)
+experiments/
+test-output/
+
+# CLI cache
+.cli_cache.json
