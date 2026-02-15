@@ -1137,6 +1137,85 @@ async def quiz_video_completed(data: dict):
     return result
 
 
+# ============ Auto-DM Quiz to Meeting Participants ============
+
+@app.post("/api/quiz/dm-participant")
+async def dm_participant_quiz(data: dict):
+    """
+    DM a meeting participant with quiz intro via Team Chat chatbot.
+    Called from RTMS service when participant speaks.
+    """
+    from services.zoom_chatbot_service import send_quiz_intro, get_user_jid
+
+    meeting_id = data.get("meeting_id")
+    user_id = data.get("user_id")
+    user_name = data.get("user_name", "Student")
+    user_email = data.get("user_email")
+
+    if not user_email:
+        logger.warning(f"No email for user {user_name}, cannot DM")
+        return {"success": False, "error": "No email"}
+
+    logger.info(f"DM quiz to {user_name} ({user_email}) from meeting {meeting_id}")
+
+    try:
+        # Get user's JID from their email
+        jid = await get_user_jid(user_email)
+        if not jid:
+            logger.warning(f"Could not get JID for {user_email}")
+            return {"success": False, "error": "Could not get JID"}
+
+        # Get account_id from env (same account)
+        account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")
+
+        # Load concepts and generate quiz
+        mapping = load_concept_video_mapping(quiz_video_output_dir)
+        if not mapping:
+            # Send simple welcome message if no quiz content
+            from services.zoom_chatbot_service import send_text_message
+            await send_text_message(
+                to_jid=jid,
+                account_id=account_id,
+                text=f"Hi {user_name}! Welcome to the lecture. Quiz content will be available soon."
+            )
+            return {"success": True, "message": "Welcome sent (no quiz content)"}
+
+        # Generate quiz
+        concepts = [
+            {"concept": name, "description": info["description"], "video_path": info.get("video_path")}
+            for name, info in mapping.items()
+        ]
+
+        quiz = await generate_quiz_from_concepts(
+            concepts=concepts,
+            num_questions=min(3, len(concepts)),
+            topic="Lecture Quiz"
+        )
+
+        # Create session
+        create_quiz_session(
+            student_jid=jid,
+            account_id=account_id,
+            quiz=quiz,
+            on_play_video=trigger_video_playback
+        )
+
+        # Send quiz intro
+        await send_quiz_intro(
+            to_jid=jid,
+            account_id=account_id,
+            topic=quiz.topic,
+            num_questions=len(quiz.questions)
+        )
+
+        logger.info(f"Quiz DM sent to {user_name} ({jid})")
+        return {"success": True}
+
+    except Exception as e:
+        logger.error(f"Error DMing participant: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # ============ Meeting Chat Quiz Endpoints ============
 
 # Store active meeting quizzes: meeting_id -> {current_question, questions, scores}
