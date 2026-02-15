@@ -26,7 +26,4 @@ export const config = {
 
   zoomSecretToken: process.env.ZOOM_SECRET_TOKEN,
   frontendWssUrl: process.env.FRONTEND_WSS_URL_TO_CONNECT_TO,
-
-  // Expression analysis service URL
-  expressionServiceUrl: process.env.EXPRESSION_SERVICE_URL || 'http://localhost:8001',
 };

@@ -610,7 +610,7 @@ RTMSManager.on('meeting.rtms_stopped', (payload) => {
 });
 
 // Handle video frames for demeanor/expression analysis
-// Throttle: only forward frames at ~1 per 3 seconds to avoid overwhelming the expression service
+// Throttle: only forward frames at ~1 per 3 seconds to avoid overwhelming clients
 const lastVideoFrameTime = new Map(); // meetingId -> timestamp
 const VIDEO_THROTTLE_MS = 3000;
 
@@ -626,43 +626,16 @@ RTMSManager.on('video', async ({ buffer, userId, userName, timestamp, meetingId,
 
   console.log(`[Video] Frame received for meeting ${meetingId} (${buffer.length} bytes)`);
 
-  // Forward to expression analysis service
-  try {
-    const formData = new FormData();
-    formData.append('frame', new Blob([buffer], { type: 'image/jpeg' }), 'frame.jpg');
-    formData.append('meeting_id', meetingId);
-    formData.append('timestamp', String(timestamp || now));
-
-    const response = await fetch(`${config.expressionServiceUrl}/api/frames`, {
-      method: 'POST',
-      body: formData,
-    });
-
-    if (response.ok) {
-      const result = await response.json();
-      if (result.status === 'ok') {
-        console.log(`[Video] Expression analysis: ${result.faces} faces, dominant: ${Object.entries(result.emotions || {}).sort((a, b) => b[1] - a[1])[0]?.[0] || 'unknown'}`);
-
-        // Broadcast expression data to frontend
-        broadcastToFrontendClients({
-          type: 'expression',
-          data: {
-            meetingId,
-            faces: result.faces,
-            emotions: result.emotions,
-            timestamp: now,
-          }
-        });
-      }
-    } else {
-      console.log(`[Video] Expression service returned: ${response.status}`);
+  // Broadcast video frame to connected WebSocket clients (local Python backend)
+  // The local backend will forward to local expression-dashboard
+  broadcastToFrontendClients({
+    type: 'video_frame',
+    data: {
+      meetingId,
+      frame: buffer.toString('base64'),
+      timestamp: timestamp || now,
     }
-  } catch (error) {
-    // Don't spam logs if expression service is not running
-    if (!error.message.includes('ECONNREFUSED')) {
-      console.error('[Video] Error sending frame to expression service:', error.message);
-    }
-  }
+  });
 });
 
 await RTMSManager.start();

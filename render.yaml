@@ -1,18 +1,4 @@
 services:
-  # Expression Analysis Dashboard (Demeanor Detection)
-  - type: web
-    name: expression-dashboard
-    runtime: python
-    region: oregon
-    plan: free
-    rootDir: expression-dashboard
-    buildCommand: pip install uv && uv sync
-    startCommand: uv run uvicorn app:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/emotions
-    envVars:
-      - key: PYTHONUNBUFFERED
-        value: "1"
-
   # Python FastAPI Backend
   - type: web
     name: ai-professor-backend

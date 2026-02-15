@@ -116,6 +116,9 @@ class RenderWebSocketClient:
                         await _dispatch_event("audio", message)
                     elif msg_type == "html":
                         await _dispatch_event("html", message)
+                    elif msg_type == "video_frame":
+                        # Video frame for expression analysis
+                        await _dispatch_event("video_frame", message)
                     elif msg_type == "error":
                         logger.error(f"Error from Render: {message.get('data')}")
                     else:
