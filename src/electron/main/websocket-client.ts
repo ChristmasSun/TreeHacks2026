@@ -7,7 +7,7 @@ import { EventEmitter } from 'events';
 export class WebSocketClient extends EventEmitter {
   private ws: WebSocket | null = null;
   private url: string;
-  private reconnectInterval: number = 5000;
+  private reconnectInterval: number = 2000;
   private reconnectTimeout: NodeJS.Timeout | null = null;
 
   constructor(url: string) {
@@ -51,11 +51,15 @@ export class WebSocketClient extends EventEmitter {
         this.scheduleReconnect();
       });
 
-      this.ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        this.emit('error', error);
-        // Schedule reconnect on error
-        this.scheduleReconnect();
+      this.ws.on('error', (error: Error) => {
+        // Don't log full error to avoid "Uncaught exception" spam
+        console.log('WebSocket connection error, will retry...');
+        // Close the socket to trigger reconnect via 'close' event
+        if (this.ws) {
+          try {
+            this.ws.close();
+          } catch {}
+        }
       });
     } catch (error) {
       console.error('Failed to create WebSocket:', error);

@@ -169,6 +169,7 @@ async def startup_event():
                 metrics = await demeanor_service.analyze_frame(user_id, user_name, frame_bytes)
 
                 # Broadcast to frontend
+                logger.info(f"[Video] Broadcasting to {len(manager.active_connections)} clients")
                 await manager.broadcast({
                     "type": "DEMEANOR_UPDATE",
                     "payload": {
