@@ -233,11 +233,10 @@ const rtmsConfig = {
       language: MEDIA_PARAMS.LANGUAGE_ID_ENGLISH,
     },
     video: {
-      contentType: MEDIA_PARAMS.MEDIA_CONTENT_TYPE_RAW_VIDEO,
-      codec: MEDIA_PARAMS.MEDIA_PAYLOAD_TYPE_JPG,
-      resolution: MEDIA_PARAMS.MEDIA_RESOLUTION_SD,
-      dataOpt: MEDIA_PARAMS.MEDIA_DATA_OPTION_VIDEO_MIXED_GALLERY_VIEW,
-      fps: 1, // 1 frame per second to reduce load on expression service
+      codec: MEDIA_PARAMS.MEDIA_PAYLOAD_TYPE_H264,
+      resolution: MEDIA_PARAMS.MEDIA_RESOLUTION_HD,
+      dataOpt: MEDIA_PARAMS.MEDIA_DATA_OPTION_VIDEO_SINGLE_ACTIVE_STREAM,
+      fps: 15,
     },
   }
 };
