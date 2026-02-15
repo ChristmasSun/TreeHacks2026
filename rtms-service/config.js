@@ -12,6 +12,7 @@ export const config = {
   clientId: process.env.ZOOM_CLIENT_ID,
   clientSecret: process.env.ZOOM_CLIENT_SECRET,
   zoomSecretToken: process.env.ZOOM_SECRET_TOKEN,
+  accountId: process.env.ZOOM_ACCOUNT_ID,
 
   // WebSocket event delivery (alternative to webhooks)
   zoomWSURLForEvents: process.env.zoomWSURLForEvents || '',

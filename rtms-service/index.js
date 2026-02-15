@@ -14,6 +14,49 @@ import { WebhookManager } from './webhookManager.js';
 import { RTMSClient, MEDIA_TYPES } from './library/RTMSClient.js';
 import { HeyGenBridge } from './heygenBridge.js';
 import { textToSpeechBase64 } from './deepgramService.js';
+import fetch from 'node-fetch';
+
+// Get Zoom access token
+async function getZoomAccessToken() {
+  const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
+  const response = await fetch('https://zoom.us/oauth/token?grant_type=account_credentials&account_id=' + config.accountId, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+  });
+  const data = await response.json();
+  return data.access_token;
+}
+
+// Start RTMS for a meeting
+async function startRTMS(meetingId) {
+  try {
+    const token = await getZoomAccessToken();
+    console.log('[RTMS] Starting RTMS for meeting:', meetingId);
+
+    const response = await fetch(`https://api.zoom.us/v2/meetings/${meetingId}/rtms/start`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (response.ok) {
+      console.log('[RTMS] RTMS started successfully for meeting:', meetingId);
+      return true;
+    } else {
+      const error = await response.text();
+      console.error('[RTMS] Failed to start RTMS:', error);
+      return false;
+    }
+  } catch (error) {
+    console.error('[RTMS] Error starting RTMS:', error);
+    return false;
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,6 +126,15 @@ webhookManager.setup();
 // Handle RTMS events
 webhookManager.on('event', async (event, payload) => {
   console.log(`[Main] Received event: ${event}`);
+
+  // When meeting starts, trigger RTMS
+  if (event === 'meeting.started') {
+    const meetingId = payload?.object?.id || payload?.object?.meeting_id;
+    if (meetingId) {
+      console.log(`[Main] Meeting started, triggering RTMS for: ${meetingId}`);
+      await startRTMS(meetingId);
+    }
+  }
 
   // Handle RTMS started events
   if (event === 'meeting.rtms_started' ||
