@@ -165,6 +165,26 @@ app.get('/api/transcripts', (req, res) => {
   res.json({ meetings });
 });
 
+// API endpoint to clear transcripts for a specific meeting or all
+app.delete('/api/transcripts/:meetingId', (req, res) => {
+  const meetingId = req.params.meetingId;
+  if (meetingTranscripts.has(meetingId)) {
+    meetingTranscripts.delete(meetingId);
+    console.log(`[RTMS] Cleared transcripts for meeting: ${meetingId}`);
+    res.json({ success: true, message: `Cleared transcripts for ${meetingId}` });
+  } else {
+    res.json({ success: false, message: 'Meeting not found' });
+  }
+});
+
+// API endpoint to clear ALL transcripts
+app.delete('/api/transcripts', (req, res) => {
+  const count = meetingTranscripts.size;
+  meetingTranscripts.clear();
+  console.log(`[RTMS] Cleared all transcripts (${count} meetings)`);
+  res.json({ success: true, message: `Cleared ${count} meetings` });
+});
+
 await RTMSManager.init(rtmsConfig);
 
 if (config.mode === 'webhook') {
