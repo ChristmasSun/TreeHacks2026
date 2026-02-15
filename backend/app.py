@@ -1508,7 +1508,7 @@ async def rtms_video_frame(data: dict):
         "user_id": str,
         "user_name": str,
         "timestamp": int,
-        "frame_base64": str (H.264 encoded frame)
+        "frame_base64": str (JPG encoded frame)
     }
     """
     import base64

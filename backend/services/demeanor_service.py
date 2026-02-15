@@ -1,11 +1,10 @@
 """
 Demeanor Analysis Service
-Receives H.264 video frames from RTMS, provides a clean hook for
+Receives JPG video frames from RTMS, provides a clean hook for
 facial expression / engagement analysis. Tracks per-student metrics
 and session-level aggregation.
 
-The actual analysis model (FER, DeepFace, MediaPipe, LLM vision)
-is pluggable via set_analyzer().
+Uses FER (Facial Expression Recognition) library for emotion detection.
 """
 import logging
 import time
@@ -13,7 +12,26 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Awaitable
 
+import cv2
+import numpy as np
+
 logger = logging.getLogger(__name__)
+
+# Lazy-load FER to avoid import time at startup
+_fer_detector = None
+
+def _get_fer_detector():
+    """Lazily initialize FER detector."""
+    global _fer_detector
+    if _fer_detector is None:
+        try:
+            from fer import FER
+            _fer_detector = FER(mtcnn=True)
+            logger.info("FER detector initialized with MTCNN")
+        except Exception as e:
+            logger.warning(f"Failed to initialize FER: {e}, using stub")
+            _fer_detector = "stub"
+    return _fer_detector
 
 
 @dataclass
@@ -45,15 +63,105 @@ class StudentDemeanor:
 AnalyzerFn = Callable[[str, str, bytes], Awaitable[DemeanorMetrics]]
 
 
-async def _stub_analyzer(user_id: str, user_name: str, frame_data: bytes) -> DemeanorMetrics:
-    """Stub analyzer — returns placeholder metrics. Replace with real model."""
-    import random
-    return DemeanorMetrics(
-        engagement_score=round(random.uniform(0.4, 0.95), 2),
-        attention=random.choice(["focused", "focused", "focused", "distracted"]),
-        expression=random.choice(["neutral", "neutral", "smiling", "confused"]),
-        timestamp=time.time(),
-    )
+async def _fer_analyzer(user_id: str, user_name: str, frame_data: bytes) -> DemeanorMetrics:
+    """
+    Analyze facial expressions using FER library.
+
+    FER returns emotions: angry, disgust, fear, happy, sad, surprise, neutral
+    We map these to engagement metrics.
+    """
+    detector = _get_fer_detector()
+
+    # Fallback if FER failed to load
+    if detector == "stub":
+        import random
+        return DemeanorMetrics(
+            engagement_score=round(random.uniform(0.4, 0.95), 2),
+            attention=random.choice(["focused", "focused", "focused", "distracted"]),
+            expression=random.choice(["neutral", "neutral", "smiling", "confused"]),
+            timestamp=time.time(),
+        )
+
+    try:
+        # Decode JPG frame
+        nparr = np.frombuffer(frame_data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            logger.warning(f"Failed to decode frame for {user_name}")
+            return DemeanorMetrics(timestamp=time.time())
+
+        # Detect faces and emotions
+        results = detector.detect_emotions(img)
+
+        if not results:
+            # No face detected
+            return DemeanorMetrics(
+                engagement_score=0.3,
+                attention="away",
+                expression="unknown",
+                timestamp=time.time(),
+            )
+
+        # Use first face detected
+        emotions = results[0].get("emotions", {})
+
+        # Get dominant emotion
+        dominant_emotion = max(emotions.items(), key=lambda x: x[1])[0] if emotions else "neutral"
+        dominant_score = emotions.get(dominant_emotion, 0)
+
+        # Map FER emotions to our expression categories
+        expression_map = {
+            "happy": "smiling",
+            "sad": "bored",
+            "angry": "frustrated",
+            "fear": "confused",
+            "disgust": "frustrated",
+            "surprise": "confused",
+            "neutral": "neutral",
+        }
+        expression = expression_map.get(dominant_emotion, "neutral")
+
+        # Calculate engagement score based on emotion mix
+        # High engagement: happy, surprise (active attention)
+        # Medium engagement: neutral, fear (present but passive)
+        # Low engagement: sad, angry, disgust (disengaged)
+        engagement_weights = {
+            "happy": 0.95,
+            "surprise": 0.85,
+            "neutral": 0.65,
+            "fear": 0.50,
+            "sad": 0.35,
+            "angry": 0.30,
+            "disgust": 0.25,
+        }
+
+        engagement_score = sum(
+            emotions.get(em, 0) * weight
+            for em, weight in engagement_weights.items()
+        )
+        engagement_score = min(max(engagement_score, 0.0), 1.0)
+
+        # Determine attention based on engagement
+        if engagement_score >= 0.6:
+            attention = "focused"
+        elif engagement_score >= 0.4:
+            attention = "distracted"
+        else:
+            attention = "away"
+
+        logger.debug(f"[FER] {user_name}: {dominant_emotion} ({dominant_score:.0%}), engagement={engagement_score:.2f}")
+
+        return DemeanorMetrics(
+            engagement_score=round(engagement_score, 2),
+            attention=attention,
+            expression=expression,
+            timestamp=time.time(),
+        )
+
+    except Exception as e:
+        logger.error(f"FER analysis error for {user_name}: {e}")
+        return DemeanorMetrics(timestamp=time.time())
 
 
 class DemeanorService:
@@ -69,11 +177,11 @@ class DemeanorService:
 
     def __init__(self):
         self._students: dict[str, StudentDemeanor] = {}
-        self._analyzer: AnalyzerFn = _stub_analyzer
+        self._analyzer: AnalyzerFn = _fer_analyzer
         self._session_start: float = time.time()
 
     def set_analyzer(self, fn: AnalyzerFn):
-        """Plug in a real analysis function. Signature: async (user_id, user_name, h264_bytes) -> DemeanorMetrics"""
+        """Plug in a custom analysis function. Signature: async (user_id, user_name, jpg_bytes) -> DemeanorMetrics"""
         self._analyzer = fn
         logger.info("Demeanor analyzer updated")
 

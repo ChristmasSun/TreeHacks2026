@@ -232,6 +232,12 @@ const rtmsConfig = {
       contentType: MEDIA_PARAMS.MEDIA_CONTENT_TYPE_TEXT,
       language: MEDIA_PARAMS.LANGUAGE_ID_ENGLISH,
     },
+    video: {
+      codec: MEDIA_PARAMS.MEDIA_PAYLOAD_TYPE_JPG,
+      resolution: MEDIA_PARAMS.MEDIA_RESOLUTION_HD,
+      dataOpt: MEDIA_PARAMS.MEDIA_DATA_OPTION_VIDEO_SINGLE_ACTIVE_STREAM,
+      fps: 5,
+    },
   }
 };
 
@@ -600,6 +606,44 @@ RTMSManager.on('meeting.rtms_started', (payload) => {
 
 RTMSManager.on('meeting.rtms_stopped', (payload) => {
   console.log(`RTMS stopped for meeting ${payload.meeting_uuid}`);
+});
+
+// Video frame handling for demeanor/expression analysis
+const lastVideoFrameTime = new Map();
+const VIDEO_THROTTLE_MS = 3000; // Send 1 frame every 3 seconds per meeting
+
+RTMSManager.on('video', async ({ buffer, userId, userName, timestamp, meetingId }) => {
+  const now = Date.now();
+  const lastTime = lastVideoFrameTime.get(meetingId) || 0;
+
+  // Throttle to avoid overwhelming the backend
+  if (now - lastTime < VIDEO_THROTTLE_MS) {
+    return;
+  }
+  lastVideoFrameTime.set(meetingId, now);
+
+  console.log(`[Video] Frame from ${userName} (${buffer.length} bytes)`);
+
+  // Forward to Python backend for expression analysis
+  const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+  try {
+    await fetch(`${backendUrl}/api/rtms/video-frame`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meeting_uuid: meetingId,
+        user_id: userId,
+        user_name: userName,
+        timestamp: timestamp,
+        frame_base64: buffer.toString('base64')
+      })
+    });
+  } catch (error) {
+    // Don't log every failure to avoid spam
+    if (Math.random() < 0.1) {
+      console.error('[Video] Failed to forward frame:', error.message);
+    }
+  }
 });
 
 await RTMSManager.start();
