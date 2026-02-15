@@ -52,9 +52,14 @@ async def handle_chatbot_webhook(event: dict):
             # This is handled by Render before it broadcasts to WebSocket
             return
 
-    # Handle bot_notification events (slash commands and button clicks)
+    # Handle bot_notification events (slash commands)
     if event_type == "bot_notification":
         await handle_bot_notification(payload)
+        return
+
+    # Handle interactive_message_actions events (button clicks)
+    if event_type == "interactive_message_actions":
+        await handle_bot_notification(payload)  # Same handler works for both
         return
 
     logger.warning(f"Unhandled chatbot event type: {event_type}")
@@ -67,30 +72,34 @@ async def handle_bot_notification(payload: dict):
     Args:
         payload: The event payload from Zoom
     """
+    import json
+    logger.info(f"Full payload: {json.dumps(payload, indent=2)}")
+
     account_id = payload.get("accountId", "")
     channel_name = payload.get("channelName", "")
     cmd = payload.get("cmd", "").lower()
     robot_jid = payload.get("robotJid", "")
-    to_jid = payload.get("toJid", "")  # The user who invoked the command
+    to_jid = payload.get("toJid", "")  # The conversation/channel JID
     user_id = payload.get("userId", "")
-    user_jid = payload.get("userJid", "")
+    user_jid = payload.get("userJid", "")  # The user's JID
     user_name = payload.get("userName", "")
     action_item = payload.get("actionItem", {})
 
-    # Use toJid as the student identifier
-    student_jid = to_jid or user_jid
+    # For DMs, use toJid; it's the 1-on-1 chat channel
+    # userJid is the user themselves (needed for API calls)
+    student_jid = to_jid
 
-    logger.info(f"Bot notification from {user_name} ({student_jid}): cmd={cmd}, action={action_item}")
+    logger.info(f"Bot notification: toJid={to_jid}, userJid={user_jid}, cmd={cmd}")
 
     # Handle slash commands
     if cmd == "/makequiz":
-        await handle_makequiz_command(student_jid, account_id, user_name)
+        await handle_makequiz_command(student_jid, account_id, user_name, user_jid)
         return
 
     # Handle interactive button clicks
     if action_item:
         action_value = action_item.get("value", "")
-        await handle_button_click(student_jid, account_id, action_value)
+        await handle_button_click(student_jid, account_id, action_value, user_jid)
         return
 
     # Unknown command
@@ -102,12 +111,25 @@ async def handle_bot_notification(payload: dict):
         )
 
 
-async def handle_makequiz_command(student_jid: str, account_id: str, user_name: str):
+async def handle_makequiz_command(student_jid: str, account_id: str, user_name: str, user_jid: str):
     """
     Handle the /makequiz slash command.
     Loads quiz data and sends the intro message.
     """
-    logger.info(f"Starting quiz for {user_name} ({student_jid})")
+    logger.info(f"Starting quiz for {user_name} ({student_jid}), user_jid={user_jid}")
+
+    # First, try a simple text message to test API
+    try:
+        await send_text_message(
+            to_jid=student_jid,
+            account_id=account_id,
+            text=f"Hello {user_name}! Loading quiz...",
+            user_jid=user_jid
+        )
+        logger.info("Simple text message sent successfully!")
+    except Exception as e:
+        logger.error(f"Failed to send simple text: {e}")
+        return
 
     # Check if user already has an active session
     existing_session = get_session(student_jid)
@@ -115,7 +137,8 @@ async def handle_makequiz_command(student_jid: str, account_id: str, user_name: 
         await send_text_message(
             to_jid=student_jid,
             account_id=account_id,
-            text="You already have an active quiz! Please complete it first."
+            text="You already have an active quiz! Please complete it first.",
+            user_jid=user_jid
         )
         return
 
@@ -129,7 +152,8 @@ async def handle_makequiz_command(student_jid: str, account_id: str, user_name: 
         await send_text_message(
             to_jid=student_jid,
             account_id=account_id,
-            text="No quiz available at the moment. Please try again later."
+            text="No quiz available at the moment. Please try again later.",
+            user_jid=user_jid
         )
         return
     except Exception as e:
@@ -137,7 +161,8 @@ async def handle_makequiz_command(student_jid: str, account_id: str, user_name: 
         await send_text_message(
             to_jid=student_jid,
             account_id=account_id,
-            text=f"Error loading quiz: {e}"
+            text=f"Error loading quiz: {e}",
+            user_jid=user_jid
         )
         return
 
@@ -146,6 +171,7 @@ async def handle_makequiz_command(student_jid: str, account_id: str, user_name: 
         student_jid=student_jid,
         account_id=account_id,
         quiz=quiz,
+        user_jid=user_jid,
         on_play_video=trigger_video_playback
     )
 
@@ -154,13 +180,14 @@ async def handle_makequiz_command(student_jid: str, account_id: str, user_name: 
         to_jid=student_jid,
         account_id=account_id,
         topic=quiz.topic,
-        num_questions=len(quiz.questions)
+        num_questions=len(quiz.questions),
+        user_jid=user_jid
     )
 
     logger.info(f"Sent quiz intro to {student_jid}: {len(quiz.questions)} questions")
 
 
-async def handle_button_click(student_jid: str, account_id: str, action_value: str):
+async def handle_button_click(student_jid: str, account_id: str, action_value: str, user_jid: str):
     """
     Handle interactive button clicks (start quiz, answers, etc).
     """
@@ -172,7 +199,8 @@ async def handle_button_click(student_jid: str, account_id: str, action_value: s
             await send_text_message(
                 to_jid=student_jid,
                 account_id=account_id,
-                text="Failed to start quiz. Please try /makequiz again."
+                text="Failed to start quiz. Please try /makequiz again.",
+                user_jid=user_jid
             )
         return
 
@@ -182,7 +210,8 @@ async def handle_button_click(student_jid: str, account_id: str, action_value: s
         await send_text_message(
             to_jid=student_jid,
             account_id=account_id,
-            text="Quiz cancelled. Type /makequiz to start a new one."
+            text="Quiz cancelled. Type /makequiz to start a new one.",
+            user_jid=user_jid
         )
         return
 

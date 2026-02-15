@@ -15,6 +15,10 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+
 from backend.services.render_ws_client import start_render_client
 from backend.services.chatbot_ws_handler import setup_chatbot_handlers
 
