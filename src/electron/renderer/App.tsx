@@ -39,14 +39,29 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const normalizeBackendUrl = (input: string): string => {
+    const trimmed = input.trim();
+    if (!trimmed) return '';
+
+    // Accept IP, host:port, or full URL
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+    const parsed = new URL(withProtocol);
+    const host = parsed.hostname;
+    const port = parsed.port || '8000';
+    return `http://${host}:${port}`;
+  };
+
   // Student: connect to professor's backend
   const connectToBackend = useCallback(async () => {
     if (!backendIp.trim()) return;
     setIsConnecting(true);
     setConnectionError('');
 
-    const url = `http://${backendIp.trim()}:8000`;
+    let url = '';
     try {
+      url = normalizeBackendUrl(backendIp);
+      if (!url) throw new Error('Invalid backend address');
+
       const resp = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
       if (!resp.ok) throw new Error('Backend not healthy');
 
@@ -157,6 +172,9 @@ const App: React.FC = () => {
 
           <h2 className="text-2xl font-bold text-white mb-2">Connect to Class</h2>
           <p className="text-white/50 mb-8">Enter your professor's server IP address</p>
+          <p className="text-white/40 mb-5 text-xs">
+            Host should run <code>bun run dev</code> so backend is available on port 8000.
+          </p>
 
           <div className="space-y-4">
             <div>

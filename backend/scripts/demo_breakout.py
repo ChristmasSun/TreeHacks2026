@@ -60,7 +60,7 @@ async def trigger_breakout_demo():
         except Exception as e:
             print(f"❌ Backend not responding: {e}")
             print("\nMake sure to start the backend first:")
-            print("  cd backend && python -m uvicorn app:app --reload --port 8000")
+            print("  cd backend && python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000")
             return
     
     print("\n" + "-"*60)
@@ -111,7 +111,7 @@ def main():
 ╚════════════════════════════════════════════════════════════╝
 
 STEPS TO TEST:
-1. Start backend:    cd backend && python -m uvicorn app:app --reload --port 8000
+1. Start backend:    cd backend && python -m uvicorn app:app --reload --host 0.0.0.0 --port 8000
 2. Start Electron:   npm run build && npx electron-vite dev
 3. Register in app:  Click "Setup", enter name/email, click "Register"
 4. Run this script:  python scripts/demo_breakout.py
