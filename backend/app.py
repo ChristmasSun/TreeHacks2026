@@ -1216,6 +1216,122 @@ async def dm_participant_quiz(data: dict):
         return {"success": False, "error": str(e)}
 
 
+@app.post("/api/quiz/dm-by-name")
+async def dm_quiz_by_name(data: dict):
+    """
+    DM a quiz to a user by their display name.
+    Fallback when we don't have their user_id.
+    """
+    from services.zoom_chatbot_service import send_text_message, get_chatbot_token
+    import httpx
+
+    meeting_id = data.get("meeting_id")
+    user_name = data.get("user_name")
+
+    logger.info(f"DM quiz by name: {user_name} from meeting {meeting_id}")
+
+    # Try to find user by searching (this is a best-effort approach)
+    try:
+        token = await get_chatbot_token()
+        account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")
+
+        # Search for user by name using Zoom API
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"https://api.zoom.us/v2/users",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"status": "active", "page_size": 100}
+            )
+
+            if response.status_code == 200:
+                users = response.json().get("users", [])
+                for user in users:
+                    # Match by display name (case-insensitive partial match)
+                    if user_name.lower() in user.get("display_name", "").lower() or \
+                       user_name.lower() in f"{user.get('first_name', '')} {user.get('last_name', '')}".lower():
+                        # Found a match
+                        user_email = user.get("email")
+                        if user_email:
+                            # Call the dm-participant endpoint
+                            return await dm_participant_quiz({
+                                "meeting_id": meeting_id,
+                                "user_id": user.get("id"),
+                                "user_name": user_name,
+                                "user_email": user_email
+                            })
+
+        return {"success": False, "error": f"Could not find user: {user_name}"}
+
+    except Exception as e:
+        logger.error(f"Error in dm-by-name: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/quiz/trigger-all")
+async def trigger_quiz_all():
+    """
+    Trigger quiz to all participants in the active meeting.
+    Called from professor dashboard.
+    """
+    import httpx
+
+    logger.info("Triggering quiz to all meeting participants")
+
+    # Get active meeting transcripts from RTMS service
+    rtms_url = os.getenv("RTMS_SERVICE_URL", "https://rtms-webhook.onrender.com")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Get list of active meetings
+            meetings_res = await client.get(f"{rtms_url}/api/transcripts")
+            meetings_data = meetings_res.json()
+
+            if not meetings_data.get("meetings"):
+                return {"success": False, "error": "No active meetings found"}
+
+            meeting = meetings_data["meetings"][0]
+            meeting_id = meeting["meetingId"]
+
+            # Get transcripts to find participants
+            transcripts_res = await client.get(f"{rtms_url}/api/transcripts/{meeting_id}")
+            transcripts_data = transcripts_res.json()
+
+            # Extract unique speakers
+            speakers = {}
+            for t in transcripts_data.get("transcripts", []):
+                speaker = t.get("speaker")
+                if speaker and speaker not in speakers:
+                    speakers[speaker] = True
+
+            if not speakers:
+                return {"success": False, "error": "No participants found in meeting"}
+
+            # Send quiz to each speaker via the RTMS service (which will DM them)
+            sent_count = 0
+            for speaker_name in speakers.keys():
+                try:
+                    # Trigger DM via RTMS service
+                    await client.post(
+                        f"{rtms_url}/api/trigger-quiz-dm",
+                        json={
+                            "meeting_id": meeting_id,
+                            "user_name": speaker_name
+                        }
+                    )
+                    sent_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to DM {speaker_name}: {e}")
+
+            return {
+                "success": True,
+                "message": f"Triggered quiz for {sent_count} participants in meeting"
+            }
+
+    except Exception as e:
+        logger.error(f"Error triggering quiz to all: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # ============ Meeting Chat Quiz Endpoints ============
 
 # Store active meeting quizzes: meeting_id -> {current_question, questions, scores}

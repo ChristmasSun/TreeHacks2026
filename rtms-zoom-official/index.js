@@ -338,6 +338,57 @@ app.delete('/api/transcripts', (req, res) => {
   res.json({ success: true, message: `Cleared ${count} meetings` });
 });
 
+// API endpoint to trigger quiz DM to a specific user
+// Called from Python backend's "Send Quiz to All" feature
+app.post('/api/trigger-quiz-dm', async (req, res) => {
+  const { meeting_id, user_name, user_id } = req.body;
+
+  console.log(`[Quiz] Trigger DM for ${user_name} in meeting ${meeting_id}`);
+
+  try {
+    // Find user_id from transcripts if not provided
+    let targetUserId = user_id;
+    if (!targetUserId && meetingTranscripts.has(meeting_id)) {
+      // Look through transcripts to find this user
+      const transcripts = meetingTranscripts.get(meeting_id);
+      for (const t of transcripts) {
+        if (t.speaker === user_name && t.userId) {
+          targetUserId = t.userId;
+          break;
+        }
+      }
+    }
+
+    if (!targetUserId) {
+      // Can't find user_id, try to DM via Python backend directly with email lookup
+      const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/quiz/dm-by-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_id,
+          user_name
+        })
+      });
+
+      if (response.ok) {
+        res.json({ success: true, message: `Quiz DM triggered for ${user_name}` });
+      } else {
+        res.json({ success: false, error: 'Could not find user' });
+      }
+      return;
+    }
+
+    // We have user_id, trigger the DM
+    await dmParticipantQuiz(meeting_id, targetUserId, user_name);
+    res.json({ success: true, message: `Quiz DM sent to ${user_name}` });
+
+  } catch (error) {
+    console.error(`[Quiz] Error triggering DM: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 await RTMSManager.init(rtmsConfig);
 
 if (config.mode === 'webhook') {
@@ -403,6 +454,7 @@ RTMSManager.on('transcript', async ({ text, userId, userName, timestamp, meeting
   }
   meetingTranscripts.get(meetingId).push({
     speaker: userName,
+    userId: userId,
     text: text,
     timestamp: timestamp || Date.now()
   });
