@@ -15,6 +15,7 @@ require('dotenv').config();
 // Config
 const HEYGEN_API_KEY = process.env.HEYGEN_API_KEY;
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY;
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
 const MEETING_ID = process.env.ZOOM_MEETING_ID;
 const PASSCODE = process.env.ZOOM_PASSCODE;
 const BOT_NAME = process.env.BOT_NAME || 'AI Professor';
@@ -251,7 +252,7 @@ async function main() {
 <!DOCTYPE html>
 <html>
 <head>
-  <title>HeyGen Avatar with Context</title>
+  <title>HeyGen Avatar - Voice Conversation</title>
   <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.1.5/dist/livekit-client.umd.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -271,11 +272,31 @@ async function main() {
       background: #000;
       border-radius: 12px;
       overflow: hidden;
+      position: relative;
     }
     #avatar-video {
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+    #mic-indicator {
+      position: absolute;
+      bottom: 15px;
+      right: 15px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #666;
+      transition: all 0.2s;
+    }
+    #mic-indicator.listening {
+      background: #f44336;
+      box-shadow: 0 0 20px #f44336;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.2); }
     }
     #status {
       margin-top: 15px;
@@ -318,16 +339,50 @@ async function main() {
     button:hover { background: #45a049; }
     button.secondary { background: #2196F3; }
     button.secondary:hover { background: #1976D2; }
+    button.mic { background: #f44336; }
+    button.mic:hover { background: #d32f2f; }
+    button.mic.active { background: #4CAF50; }
+    #transcript-box {
+      margin-top: 15px;
+      padding: 12px;
+      background: #2a2a4e;
+      border-radius: 8px;
+      width: 640px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    #transcript-box h4 {
+      color: #4CAF50;
+      margin-bottom: 8px;
+    }
+    .message {
+      padding: 8px 12px;
+      margin: 5px 0;
+      border-radius: 8px;
+      max-width: 85%;
+    }
+    .message.user {
+      background: #2196F3;
+      margin-left: auto;
+      text-align: right;
+    }
+    .message.avatar {
+      background: #333;
+    }
+    .message.interim {
+      opacity: 0.6;
+      font-style: italic;
+    }
     #context-box {
       margin-top: 15px;
       padding: 12px;
       background: #2a2a4e;
       border-radius: 8px;
       width: 640px;
-      max-height: 200px;
+      max-height: 150px;
       overflow-y: auto;
       font-family: monospace;
-      font-size: 12px;
+      font-size: 11px;
       white-space: pre-wrap;
     }
     #context-box h4 {
@@ -339,23 +394,29 @@ async function main() {
 <body>
   <div id="avatar-container">
     <video id="avatar-video" autoplay playsinline></video>
+    <div id="mic-indicator"></div>
   </div>
   <canvas id="canvas" width="640" height="480"></canvas>
   <div id="status">Connecting to LiveKit...</div>
 
   <div class="controls">
     <div class="input-row">
-      <input type="text" id="question" placeholder="Ask a question..." />
-      <button onclick="askQuestion()">Ask</button>
+      <button id="mic-btn" class="mic" onclick="toggleMic()">Start Conversation</button>
+      <button class="secondary" onclick="testGreeting()">Test Greeting</button>
     </div>
     <div class="input-row">
-      <button class="secondary" onclick="refreshContext()">Refresh Context</button>
-      <button class="secondary" onclick="testGreeting()">Test Greeting</button>
+      <input type="text" id="question" placeholder="Or type a question..." />
+      <button onclick="askQuestion()">Send</button>
     </div>
   </div>
 
+  <div id="transcript-box">
+    <h4>Conversation:</h4>
+    <div id="conversation"></div>
+  </div>
+
   <div id="context-box">
-    <h4>Meeting Transcript Context:</h4>
+    <h4>Meeting Context (from Zoom RTMS):</h4>
     <div id="context-content">Loading...</div>
   </div>
 
@@ -365,17 +426,28 @@ async function main() {
     const SESSION_ID = "${heygenSessionId}";
     const API_KEY = "${HEYGEN_API_KEY}";
     const RTMS_URL = "${RTMS_SERVICE_URL}";
+    const DEEPGRAM_KEY = "${DEEPGRAM_API_KEY || ''}";
 
     const video = document.getElementById('avatar-video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const status = document.getElementById('status');
     const contextContent = document.getElementById('context-content');
+    const conversation = document.getElementById('conversation');
+    const micIndicator = document.getElementById('mic-indicator');
+    const micBtn = document.getElementById('mic-btn');
 
     let room = null;
     let currentContext = '';
+    let isListening = false;
+    let mediaRecorder = null;
+    let deepgramSocket = null;
+    let interimText = '';
+    let finalText = '';
+    let silenceTimer = null;
+    let isAvatarSpeaking = false;
 
-    // Connect to LiveKit
+    // Connect to LiveKit for HeyGen
     async function connect() {
       try {
         status.textContent = 'Creating LiveKit room...';
@@ -383,7 +455,7 @@ async function main() {
 
         room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
           if (track.kind === 'video') {
-            status.textContent = 'Avatar connected!';
+            status.textContent = 'Avatar connected! Click "Start Conversation"';
             track.attach(video);
             window.__avatarReady = true;
             startCanvasCapture();
@@ -397,7 +469,7 @@ async function main() {
           participant.trackPublications.forEach(publication => {
             if (publication.track?.kind === 'video') {
               publication.track.attach(video);
-              status.textContent = 'Avatar ready!';
+              status.textContent = 'Avatar ready! Click "Start Conversation"';
               window.__avatarReady = true;
               startCanvasCapture();
             }
@@ -416,13 +488,172 @@ async function main() {
         requestAnimationFrame(draw);
       }
       draw();
-      window.__canvasStream = canvas.captureStream(30);
+    }
+
+    // Add message to conversation
+    function addMessage(text, type, isInterim = false) {
+      if (isInterim) {
+        let interimEl = conversation.querySelector('.interim');
+        if (!interimEl) {
+          interimEl = document.createElement('div');
+          interimEl.className = 'message user interim';
+          conversation.appendChild(interimEl);
+        }
+        interimEl.textContent = text;
+      } else {
+        // Remove interim message
+        const interimEl = conversation.querySelector('.interim');
+        if (interimEl) interimEl.remove();
+
+        const msg = document.createElement('div');
+        msg.className = 'message ' + type;
+        msg.textContent = text;
+        conversation.appendChild(msg);
+      }
+      conversation.scrollTop = conversation.scrollHeight;
+    }
+
+    // Toggle microphone
+    async function toggleMic() {
+      if (isListening) {
+        stopListening();
+      } else {
+        await startListening();
+      }
+    }
+
+    // Start listening with Deepgram
+    async function startListening() {
+      if (!DEEPGRAM_KEY) {
+        status.textContent = 'Deepgram API key not configured';
+        return;
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+        // Connect to Deepgram
+        deepgramSocket = new WebSocket(
+          'wss://api.deepgram.com/v1/listen?model=nova-2&punctuate=true&interim_results=true&endpointing=300',
+          ['token', DEEPGRAM_KEY]
+        );
+
+        deepgramSocket.onopen = () => {
+          status.textContent = 'Listening... speak now!';
+          isListening = true;
+          micIndicator.classList.add('listening');
+          micBtn.textContent = 'Stop Conversation';
+          micBtn.classList.add('active');
+
+          // Create MediaRecorder to send audio
+          mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+          mediaRecorder.ondataavailable = (e) => {
+            if (deepgramSocket?.readyState === WebSocket.OPEN && !isAvatarSpeaking) {
+              deepgramSocket.send(e.data);
+            }
+          };
+          mediaRecorder.start(100); // Send every 100ms
+        };
+
+        deepgramSocket.onmessage = (msg) => {
+          const data = JSON.parse(msg.data);
+          const transcript = data.channel?.alternatives?.[0]?.transcript;
+
+          if (transcript) {
+            if (data.is_final) {
+              finalText += ' ' + transcript;
+              addMessage(finalText.trim(), 'user', false);
+
+              // Reset silence timer
+              clearTimeout(silenceTimer);
+              silenceTimer = setTimeout(() => {
+                if (finalText.trim()) {
+                  processUserInput(finalText.trim());
+                  finalText = '';
+                }
+              }, 1500); // 1.5s of silence triggers response
+            } else {
+              interimText = finalText + ' ' + transcript;
+              addMessage(interimText.trim(), 'user', true);
+            }
+          }
+        };
+
+        deepgramSocket.onerror = (e) => {
+          console.error('Deepgram error:', e);
+          status.textContent = 'Speech recognition error';
+          stopListening();
+        };
+
+        deepgramSocket.onclose = () => {
+          if (isListening) stopListening();
+        };
+
+      } catch (err) {
+        status.textContent = 'Microphone error: ' + err.message;
+      }
+    }
+
+    function stopListening() {
+      isListening = false;
+      micIndicator.classList.remove('listening');
+      micBtn.textContent = 'Start Conversation';
+      micBtn.classList.remove('active');
+
+      if (mediaRecorder?.state !== 'inactive') {
+        mediaRecorder?.stop();
+      }
+      if (deepgramSocket?.readyState === WebSocket.OPEN) {
+        deepgramSocket.close();
+      }
+      clearTimeout(silenceTimer);
+      status.textContent = 'Conversation paused';
+    }
+
+    // Process user input and get avatar response
+    async function processUserInput(text) {
+      if (!text.trim() || isAvatarSpeaking) return;
+
+      status.textContent = 'Thinking...';
+      isAvatarSpeaking = true;
+
+      try {
+        // Get response from Cerebras via backend
+        const response = await fetch('/api/respond', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: text, context: currentContext })
+        });
+        const { answer } = await response.json();
+
+        addMessage(answer, 'avatar');
+        status.textContent = 'Avatar speaking...';
+
+        // Make avatar speak
+        await fetch('https://api.heygen.com/v1/streaming.task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
+          body: JSON.stringify({ session_id: SESSION_ID, text: answer, task_type: 'talk' })
+        });
+
+        // Estimate speaking time (rough: 150 words per minute)
+        const wordCount = answer.split(' ').length;
+        const speakingTime = Math.max(2000, (wordCount / 150) * 60 * 1000);
+
+        setTimeout(() => {
+          isAvatarSpeaking = false;
+          status.textContent = 'Listening...';
+        }, speakingTime);
+
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+        isAvatarSpeaking = false;
+      }
     }
 
     // Fetch transcript context
     async function refreshContext() {
       try {
-        // Get active meetings first
         const meetingsRes = await fetch(RTMS_URL + '/api/transcripts');
         const { meetings } = await meetingsRes.json();
 
@@ -432,59 +663,43 @@ async function main() {
           const data = await res.json();
           currentContext = data.fullContext || '';
           contextContent.textContent = currentContext || 'No transcripts yet...';
-          status.textContent = 'Context updated! ' + data.count + ' messages';
         } else {
-          contextContent.textContent = 'No active meetings with transcripts';
+          contextContent.textContent = 'No active meetings';
         }
       } catch (e) {
-        contextContent.textContent = 'Error fetching context: ' + e.message;
+        contextContent.textContent = 'Error: ' + e.message;
       }
     }
 
-    // Ask question with context
+    // Text input fallback
     async function askQuestion() {
       const input = document.getElementById('question');
       const question = input.value.trim();
       if (!question) return;
-
-      status.textContent = 'Generating response...';
       input.value = '';
-
-      try {
-        // Call backend to generate response
-        const response = await fetch('/api/respond', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, context: currentContext })
-        });
-        const { answer } = await response.json();
-
-        status.textContent = 'Speaking: ' + answer.substring(0, 50) + '...';
-
-        // Make avatar speak
-        await fetch('https://api.heygen.com/v1/streaming.task', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
-          body: JSON.stringify({ session_id: SESSION_ID, text: answer, task_type: 'talk' })
-        });
-
-        status.textContent = 'Avatar speaking!';
-      } catch (e) {
-        status.textContent = 'Error: ' + e.message;
-      }
+      addMessage(question, 'user');
+      await processUserInput(question);
     }
 
     async function testGreeting() {
-      status.textContent = 'Speaking greeting...';
+      isAvatarSpeaking = true;
+      status.textContent = 'Avatar speaking...';
+      addMessage("Hello! I'm your AI Professor. I have access to the live meeting transcript. Feel free to ask me anything about what's been discussed!", 'avatar');
+
       await fetch('https://api.heygen.com/v1/streaming.task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
         body: JSON.stringify({
           session_id: SESSION_ID,
-          text: 'Hello! I am your AI Professor. I have access to the live meeting transcript and can answer questions about what has been discussed.',
+          text: "Hello! I'm your AI Professor. I have access to the live meeting transcript. Feel free to ask me anything about what's been discussed!",
           task_type: 'talk'
         })
       });
+
+      setTimeout(() => {
+        isAvatarSpeaking = false;
+        status.textContent = 'Ready';
+      }, 8000);
     }
 
     // Enter key to submit
