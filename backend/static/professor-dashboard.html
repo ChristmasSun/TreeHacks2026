@@ -246,17 +246,29 @@
         if (data.count === 0) {
           listDiv.innerHTML = '<p class="text-gray-500 text-sm">No students registered yet</p>';
         } else {
-          listDiv.innerHTML = data.students.map(s => `
-            <div class="flex items-center justify-between py-2 px-3 bg-gray-700/50 rounded-lg">
-              <div>
-                <span class="font-medium">${s.name}</span>
-                <span class="text-gray-400 text-sm ml-2">${s.email}</span>
-              </div>
-              <div class="flex items-center gap-2">
-                ${s.has_avatar ? '<span class="text-green-400 text-xs">● Active</span>' : '<span class="text-gray-500 text-xs">○ Waiting</span>'}
-              </div>
-            </div>
-          `).join('');
+          listDiv.innerHTML = '';
+          data.students.forEach(s => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between py-2 px-3 bg-gray-700/50 rounded-lg';
+            const info = document.createElement('div');
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'font-medium';
+            nameSpan.textContent = s.name;
+            const emailSpan = document.createElement('span');
+            emailSpan.className = 'text-gray-400 text-sm ml-2';
+            emailSpan.textContent = s.email;
+            info.appendChild(nameSpan);
+            info.appendChild(emailSpan);
+            const status = document.createElement('div');
+            status.className = 'flex items-center gap-2';
+            const dot = document.createElement('span');
+            dot.className = s.has_avatar ? 'text-green-400 text-xs' : 'text-gray-500 text-xs';
+            dot.textContent = s.has_avatar ? '● Active' : '○ Waiting';
+            status.appendChild(dot);
+            row.appendChild(info);
+            row.appendChild(status);
+            listDiv.appendChild(row);
+          });
         }
         log(`Fetched ${data.count} students`);
       } catch (err) {
@@ -374,9 +386,16 @@
           if (transcriptsData.transcripts && transcriptsData.transcripts.length > 0) {
             // Show last 5 entries
             const recent = transcriptsData.transcripts.slice(-5);
-            preview.innerHTML = recent.map(t =>
-              `<p><span class="text-blue-400">${t.speaker}:</span> ${t.text}</p>`
-            ).join('');
+            preview.innerHTML = '';
+            recent.forEach(t => {
+              const p = document.createElement('p');
+              const speaker = document.createElement('span');
+              speaker.className = 'text-blue-400';
+              speaker.textContent = t.speaker + ':';
+              p.appendChild(speaker);
+              p.appendChild(document.createTextNode(' ' + t.text));
+              preview.appendChild(p);
+            });
           }
 
           // Also set this as active meeting in backend

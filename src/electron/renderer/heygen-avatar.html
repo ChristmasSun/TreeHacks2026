@@ -5,60 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Tutor</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
-
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #000;
       color: white;
       height: 100vh;
       display: flex;
       flex-direction: column;
     }
-
-    /* Glass utility */
-    .glass {
-      background: rgba(255, 255, 255, 0.06);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    /* Shimmer animation */
-    @keyframes shimmer {
-      0% { background-position: -200% 0; }
-      100% { background-position: 200% 0; }
-    }
-
     .header {
       padding: 12px 16px;
-      background: rgba(255, 255, 255, 0.04);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+      background: rgba(0,0,0,0.8);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
     }
-    .header h1 {
-      font-size: 14px;
-      font-weight: 300;
-      letter-spacing: 0.025em;
-      color: rgba(255, 255, 255, 0.7);
-    }
+    .header h1 { font-size: 14px; font-weight: 500; opacity: 0.8; }
     .close-btn {
       background: none;
       border: none;
       color: white;
-      opacity: 0.4;
+      opacity: 0.6;
       cursor: pointer;
       font-size: 20px;
       padding: 4px 8px;
-      border-radius: 8px;
-      transition: all 0.2s;
     }
-    .close-btn:hover { opacity: 0.8; background: rgba(255, 255, 255, 0.06); }
+    .close-btn:hover { opacity: 1; }
     .main {
       flex: 1;
       display: flex;
@@ -68,12 +42,11 @@
     }
     .video-container {
       flex: 1;
-      background: rgba(255, 255, 255, 0.03);
-      border-radius: 16px;
+      background: #111;
+      border-radius: 12px;
       overflow: hidden;
       position: relative;
       min-height: 300px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
     }
     #avatar-video {
       width: 100%;
@@ -87,48 +60,34 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: rgba(0, 0, 0, 0.4);
-      backdrop-filter: blur(10px);
+      background: #111;
     }
     .spinner {
       width: 40px;
       height: 40px;
-      border: 2px solid rgba(96, 165, 250, 0.2);
-      border-top-color: #60a5fa;
+      border: 3px solid rgba(59, 130, 246, 0.3);
+      border-top-color: #3b82f6;
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loading p, .error p {
-      margin-top: 12px;
-      opacity: 0.6;
-      font-size: 14px;
-      font-weight: 300;
-    }
-    .error { color: rgba(248, 113, 113, 0.8); }
+    .loading p, .error p { margin-top: 12px; opacity: 0.7; font-size: 14px; }
+    .error { color: #f87171; }
     .retry-btn {
       margin-top: 16px;
       padding: 8px 16px;
-      background: rgba(59, 130, 246, 0.2);
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      border-radius: 12px;
-      color: #93c5fd;
+      background: #3b82f6;
+      border: none;
+      border-radius: 8px;
+      color: white;
       cursor: pointer;
-      font-size: 14px;
-      transition: all 0.2s;
-    }
-    .retry-btn:hover {
-      background: rgba(59, 130, 246, 0.3);
     }
     .chat {
       width: 300px;
       display: flex;
       flex-direction: column;
-      background: rgba(255, 255, 255, 0.06);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 16px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
       overflow: hidden;
     }
     .messages {
@@ -142,123 +101,92 @@
       border-radius: 12px;
       max-width: 85%;
       font-size: 14px;
-      font-weight: 300;
     }
     .message.student {
-      background: rgba(59, 130, 246, 0.3);
-      border: 1px solid rgba(59, 130, 246, 0.2);
+      background: #3b82f6;
       margin-left: auto;
     }
     .message.avatar {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: #374151;
     }
     .input-area {
       padding: 12px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-top: 1px solid rgba(255,255,255,0.1);
       display: flex;
       gap: 8px;
     }
     .input-area input {
       flex: 1;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 12px;
+      background: #1f2937;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
       padding: 8px 12px;
       color: white;
       font-size: 14px;
-      font-family: inherit;
-      font-weight: 300;
-      transition: all 0.2s;
     }
-    .input-area input:focus {
-      outline: none;
-      border-color: rgba(96, 165, 250, 0.6);
-      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2);
-    }
+    .input-area input:focus { outline: none; border-color: #3b82f6; }
     .input-area button {
       padding: 8px 16px;
-      background: rgba(59, 130, 246, 0.2);
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      border-radius: 12px;
-      color: #93c5fd;
+      background: #3b82f6;
+      border: none;
+      border-radius: 8px;
+      color: white;
       cursor: pointer;
-      font-family: inherit;
-      font-size: 14px;
-      transition: all 0.2s;
     }
-    .input-area button:hover { background: rgba(59, 130, 246, 0.3); }
-    .input-area button:disabled {
-      background: rgba(255, 255, 255, 0.04);
-      border-color: rgba(255, 255, 255, 0.06);
-      color: rgba(255, 255, 255, 0.3);
-      cursor: not-allowed;
-    }
+    .input-area button:disabled { background: #374151; cursor: not-allowed; }
     .mic-btn {
       padding: 8px 12px;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 12px;
+      background: #374151;
+      border: none;
+      border-radius: 8px;
       color: white;
       cursor: pointer;
       font-size: 18px;
-      transition: all 0.2s;
+      transition: background 0.2s;
     }
-    .mic-btn:hover { background: rgba(255, 255, 255, 0.1); }
-    .mic-btn.recording {
-      background: rgba(59, 130, 246, 0.2);
-      border-color: rgba(59, 130, 246, 0.3);
-      animation: pulse-mic 1.5s ease-in-out infinite;
-    }
+    .mic-btn:hover { background: #4b5563; }
+    .mic-btn.recording { background: #ef4444; animation: pulse-mic 1s infinite; }
     .mic-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     @keyframes pulse-mic {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
-      50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
+      50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
     }
     .hidden { display: none !important; }
     .mode-toggle {
       display: flex;
       gap: 4px;
       padding: 4px;
-      background: rgba(255, 255, 255, 0.04);
-      border-radius: 12px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 8px;
       margin-bottom: 12px;
     }
     .mode-btn {
       flex: 1;
       padding: 8px 12px;
       border: none;
-      border-radius: 10px;
+      border-radius: 6px;
       background: transparent;
-      color: rgba(255, 255, 255, 0.4);
+      color: rgba(255,255,255,0.6);
       cursor: pointer;
       font-size: 12px;
-      font-family: inherit;
-      font-weight: 300;
       transition: all 0.2s;
     }
     .mode-btn.active {
-      background: rgba(59, 130, 246, 0.2);
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      color: #93c5fd;
+      background: #3b82f6;
+      color: white;
     }
-    .mode-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.06); }
+    .mode-btn:hover:not(.active) { background: rgba(255,255,255,0.1); }
     .speaking-indicator {
       position: absolute;
       bottom: 12px;
       left: 12px;
-      background: rgba(255, 255, 255, 0.06);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 6px 14px;
+      background: rgba(0,0,0,0.6);
+      padding: 6px 12px;
       border-radius: 20px;
       font-size: 12px;
-      font-weight: 300;
       display: flex;
       align-items: center;
       gap: 8px;
-      color: rgba(255, 255, 255, 0.6);
     }
     .speaking-dots {
       display: flex;
@@ -267,7 +195,7 @@
     .speaking-dots span {
       width: 6px;
       height: 6px;
-      background: #60a5fa;
+      background: #3b82f6;
       border-radius: 50%;
       animation: pulse 1s infinite;
     }
@@ -281,9 +209,7 @@
     .explainer-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(0, 0, 0, 0.85);
-      backdrop-filter: blur(10px);
-      -webkit-backdrop-filter: blur(10px);
+      background: rgba(0,0,0,0.95);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -297,20 +223,17 @@
     }
     .explainer-header h2 {
       font-size: 18px;
-      font-weight: 300;
-      letter-spacing: 0.025em;
+      font-weight: 600;
       margin-bottom: 4px;
     }
     .explainer-header p {
       font-size: 14px;
-      opacity: 0.5;
-      font-weight: 300;
+      opacity: 0.7;
     }
     #explainer-video {
       max-width: 100%;
       max-height: calc(100% - 100px);
-      border-radius: 16px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
     }
     .explainer-controls {
       padding: 12px 20px;
@@ -320,25 +243,21 @@
     .explainer-btn {
       padding: 8px 20px;
       border: none;
-      border-radius: 12px;
+      border-radius: 8px;
       cursor: pointer;
       font-size: 14px;
-      font-family: inherit;
-      font-weight: 400;
       transition: all 0.2s;
     }
     .explainer-btn.primary {
-      background: rgba(59, 130, 246, 0.2);
-      border: 1px solid rgba(59, 130, 246, 0.2);
-      color: #93c5fd;
+      background: #3b82f6;
+      color: white;
     }
-    .explainer-btn.primary:hover { background: rgba(59, 130, 246, 0.3); }
+    .explainer-btn.primary:hover { background: #2563eb; }
     .explainer-btn.secondary {
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: rgba(255, 255, 255, 0.6);
+      background: #374151;
+      color: white;
     }
-    .explainer-btn.secondary:hover { background: rgba(255, 255, 255, 0.1); }
+    .explainer-btn.secondary:hover { background: #4b5563; }
   </style>
 </head>
 <body>
@@ -346,7 +265,7 @@
     <h1>AI Tutor &bull; <span id="student-name">Student</span></h1>
     <button class="close-btn" onclick="closeWindow()">&times;</button>
   </div>
-
+  
   <div class="main">
     <div class="video-container">
       <div class="loading" id="loading">
@@ -378,7 +297,7 @@
         <span>Speaking...</span>
       </div>
     </div>
-
+    
     <div class="chat">
       <div class="mode-toggle">
         <div id="voice-status" class="mode-btn active" style="flex:1; cursor:default; text-align:center;">
@@ -395,45 +314,30 @@
   </div>
 
   <script type="module">
-    import StreamingAvatar, { AvatarQuality, StreamingEvents } from 'https://esm.sh/@heygen/streaming-avatar@latest';
+    import { Room, RoomEvent } from 'https://esm.sh/livekit-client@latest';
 
-    let avatar = null;
+    let livekitRoom = null;
     let sessionId = null;
+    let heygenWsUrl = null;   // Passed to backend for LITE audio control
+    let sessionToken = null;  // Session token for LITE WebSocket auth + session stop
     let conversationHistory = [];
-
-    // Track whether current speech was interrupted by user
-    let _wasInterrupted = false;
-
-    /**
-     * Speak text through HeyGen avatar using async mode.
-     * Completion is handled by AVATAR_STOP_TALKING event, not by awaiting.
-     */
-    async function avatarSpeak(text) {
-      _wasInterrupted = false;
-      // Interrupt any current speech first
-      try { await avatar.interrupt(); } catch(e) {}
-
-      console.log('🔊 avatarSpeak:', text.slice(0, 60));
-      try {
-        await avatar.speak({
-          text,
-          taskType: 'repeat',
-          taskMode: 'async',
-        });
-      } catch (e) {
-        console.error('Avatar speak error:', e);
-      }
-      // Don't wait for completion — AVATAR_STOP_TALKING event handles it
-    }
 
     const params = new URLSearchParams(window.location.search);
     const studentName = params.get('name') || 'Student';
-    const backendUrl = params.get('backend') || 'http://127.0.0.1:8000';
+    const rawBackend = params.get('backend') || 'http://127.0.0.1:8000';
+    // Validate backend URL is a safe HTTP(S) origin
+    const backendUrl = (() => {
+      try {
+        const u = new URL(rawBackend);
+        if (u.protocol === 'http:' || u.protocol === 'https:') return u.origin;
+      } catch {}
+      return 'http://127.0.0.1:8000';
+    })();
 
     document.getElementById('student-name').textContent = studentName;
 
     window.closeWindow = function() {
-      if (avatar) avatar.stopAvatar().catch(() => {});
+      if (livekitRoom) livekitRoom.disconnect().catch(() => {});
       window.close();
     }
 
@@ -461,88 +365,94 @@
       document.getElementById('messages').scrollTop = 9999;
     }
 
-    async function fetchToken() {
-      const res = await fetch(backendUrl + '/api/heygen-token');
-      if (!res.ok) throw new Error('Failed to get token');
-      const data = await res.json();
-      return data.token;
-    }
-
     window.startAvatar = async function() {
       showLoading();
 
       try {
-        const token = await fetchToken();
-        console.log('Got token');
+        // 1. Create LITE session via backend
+        console.log('Fetching HeyGen LITE session...');
+        const res = await fetch(backendUrl + '/api/heygen-token');
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error('HeyGen session failed: ' + errText);
+        }
+        const sessionData = await res.json();
+        console.log('Session data:', JSON.stringify(sessionData, null, 2));
 
-        avatar = new StreamingAvatar({ token });
+        sessionId = sessionData.session_id;
+        heygenWsUrl = sessionData.ws_url;
+        sessionToken = sessionData.session_token;
+        const livekitUrl = sessionData.livekit_url;
+        const accessToken = sessionData.livekit_token;
 
-        avatar.on(StreamingEvents.STREAM_READY, async (event) => {
-          console.log('Stream ready');
+        console.log('Got LITE session:', sessionId, 'ws_url:', heygenWsUrl ? 'yes' : 'MISSING', 'livekit:', livekitUrl ? 'yes' : 'MISSING');
+
+        // Start audio pipeline immediately (don't wait for video)
+        // Kill any stale reconnect loops, then start fresh
+        shouldReconnect = false;
+        stopAudioPipeline();
+
+        const greeting = 'Hello ' + studentName + '! I\'m your AI Professor. I have context from the lecture, so just ask me anything!';
+        addMessage('avatar', greeting);
+        document.getElementById('input').disabled = false;
+        document.getElementById('send-btn').disabled = false;
+        document.getElementById('mic-btn').disabled = false;
+
+        shouldReconnect = true;
+        startAudioPipeline();
+
+        if (!livekitUrl || !accessToken) {
+          console.warn('Missing LiveKit credentials — video will not load, but audio still works');
+          return;
+        }
+
+        // 2. Connect to LiveKit for video rendering
+        livekitRoom = new Room({
+          adaptiveStream: true,
+          dynacast: true,
+        });
+
+        livekitRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          console.log('Track subscribed:', track.kind, participant.identity);
           const video = document.getElementById('avatar-video');
-          video.srcObject = event.detail;
 
-          // Ensure audio plays by unmuting video element
-          video.muted = false;
-          video.volume = 1.0;
+          if (track.kind === 'video') {
+            track.attach(video);
+            video.muted = false;
+            video.volume = 1.0;
+            hideOverlays();
+          }
 
-          video.play().catch(console.error);
-          hideOverlays();
-
-          document.getElementById('input').disabled = false;
-          document.getElementById('send-btn').disabled = false;
-          document.getElementById('mic-btn').disabled = false;
-
-          // Greeting message
-          const greeting = 'Hello ' + studentName + '! I\'m your AI Professor. I have context from the lecture, so just ask me anything!';
-          addMessage('avatar', greeting);
-
-          // Start audio pipeline immediately (don't wait for greeting to finish)
-          // The speak queue handles interruption if user talks during greeting
-          console.log('🎤 Starting audio pipeline...');
-          startAudioPipeline();
-
-          // Speak greeting (will be interrupted if user speaks first)
-          isSpeakingResponse = true;
-          await avatarSpeak(greeting);
-          isSpeakingResponse = false;
-        });
-
-        avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-          console.log('Disconnected');
-          showError('Connection lost');
-        });
-
-        avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
-          document.getElementById('speaking').classList.remove('hidden');
-          console.log('🗣️ Avatar started talking');
-        });
-
-        avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-          document.getElementById('speaking').classList.add('hidden');
-          console.log('🗣️ Avatar stopped talking (interrupted=' + _wasInterrupted + ')');
-
-          if (!_wasInterrupted && isSpeakingResponse) {
-            // Natural end of speech — tell backend
-            isSpeakingResponse = false;
-            if (audioWs?.readyState === WebSocket.OPEN) {
-              audioWs.send(JSON.stringify({ type: 'avatar_done' }));
-            }
-            updateVoiceStatus('listening');
+          if (track.kind === 'audio') {
+            track.attach(video);
           }
         });
 
-        const session = await avatar.createStartAvatar({
-          quality: AvatarQuality.Medium,
-          avatarName: 'default',
+        livekitRoom.on(RoomEvent.Disconnected, () => {
+          console.log('LiveKit disconnected');
         });
 
-        console.log('Session started:', session);
-        sessionId = session.session_id;
+        await livekitRoom.connect(livekitUrl, accessToken);
+        console.log('Connected to LiveKit room');
+
+        // Check for existing tracks (in case they arrived before our listener)
+        livekitRoom.remoteParticipants.forEach((participant) => {
+          participant.trackPublications.forEach((publication) => {
+            if (publication.track) {
+              const video = document.getElementById('avatar-video');
+              if (publication.track.kind === 'video') {
+                publication.track.attach(video);
+                hideOverlays();
+              }
+              if (publication.track.kind === 'audio') {
+                publication.track.attach(video);
+              }
+            }
+          });
+        });
 
       } catch (err) {
-        console.error('Full error:', err);
-        console.error('Error details:', JSON.stringify(err, null, 2));
+        console.error('Avatar start error:', err);
         showError(err.message || 'Failed to connect');
       }
     }
@@ -550,7 +460,7 @@
     window.sendMessage = async function() {
       const input = document.getElementById('input');
       const text = input.value.trim();
-      if (!text || !avatar) return;
+      if (!text) return;
 
       input.value = '';
       addMessage('student', text);
@@ -577,9 +487,9 @@
 
         addMessage('avatar', response);
         conversationHistory.push({ role: 'avatar', text: response });
-        await avatarSpeak(response);
+        // TTS + lip-sync handled by backend via LITE mode (no avatarSpeak needed)
       } catch (err) {
-        console.error('Speak error:', err);
+        console.error('Send error:', err);
       }
     }
 
@@ -591,6 +501,7 @@
     let isListening = false;
     let isSpeakingResponse = false;
     let isMuted = false;
+    let shouldReconnect = false;  // Only reconnect after startAvatar succeeds
     let audioWs = null;
     let audioContext = null;
     let audioWorkletNode = null;
@@ -602,31 +513,23 @@
 
       switch(status) {
         case 'listening':
-          statusEl.textContent = '🎤 Listening...';
-          statusEl.style.background = 'rgba(59, 130, 246, 0.2)';
-          statusEl.style.borderColor = 'rgba(59, 130, 246, 0.2)';
-          statusEl.style.color = '#93c5fd';
+          statusEl.textContent = 'Listening...';
+          statusEl.style.background = '#10b981';
           micBtn.classList.add('recording');
           break;
         case 'thinking':
-          statusEl.textContent = '🤔 Thinking...';
-          statusEl.style.background = 'rgba(245, 158, 11, 0.2)';
-          statusEl.style.borderColor = 'rgba(245, 158, 11, 0.2)';
-          statusEl.style.color = '#fcd34d';
+          statusEl.textContent = 'Thinking...';
+          statusEl.style.background = '#f59e0b';
           micBtn.classList.remove('recording');
           break;
         case 'speaking':
-          statusEl.textContent = '🗣️ Speaking (interrupt anytime)';
-          statusEl.style.background = 'rgba(59, 130, 246, 0.2)';
-          statusEl.style.borderColor = 'rgba(59, 130, 246, 0.2)';
-          statusEl.style.color = '#93c5fd';
+          statusEl.textContent = 'Speaking (interrupt anytime)';
+          statusEl.style.background = '#3b82f6';
           micBtn.classList.add('recording');
           break;
         case 'muted':
-          statusEl.textContent = '🔇 Muted';
-          statusEl.style.background = 'rgba(255, 255, 255, 0.04)';
-          statusEl.style.borderColor = 'rgba(255, 255, 255, 0.06)';
-          statusEl.style.color = 'rgba(255, 255, 255, 0.4)';
+          statusEl.textContent = 'Muted';
+          statusEl.style.background = '#6b7280';
           micBtn.classList.remove('recording');
           break;
       }
@@ -682,7 +585,14 @@
     const processorDataUrl = 'data:application/javascript;base64,' + btoa(pcmProcessorCode);
 
     async function startAudioPipeline() {
-      console.log('🎤 Starting audio pipeline...');
+      // Kill any existing connection first
+      if (audioWs) {
+        const old = audioWs;
+        audioWs = null;
+        try { old.onclose = null; old.close(); } catch(e) {}
+      }
+
+      console.log('Starting audio pipeline... heygenWsUrl=' + (heygenWsUrl ? 'set' : 'MISSING'));
 
       try {
         // 1. Connect WebSocket to backend audio endpoint
@@ -690,11 +600,13 @@
         audioWs = new WebSocket(wsUrl);
 
         audioWs.onopen = () => {
-          console.log('✅ Audio WebSocket connected');
+          console.log('Audio WebSocket connected');
           audioWs.send(JSON.stringify({
             type: 'start_session',
             student_name: studentName,
             meeting_id: params.get('meeting_id'),
+            heygen_ws_url: heygenWsUrl,    // Backend connects to LITE WebSocket
+            session_token: sessionToken,    // Auth for LITE session
           }));
         };
 
@@ -714,8 +626,8 @@
               break;
 
             case 'vad_speech_end':
-              // Backend processed: VAD end → speculative LLM response
-              console.log('🗣️ Got response:', data.response);
+              // Backend processed: VAD end → LLM response → PocketTTS → HeyGen LITE
+              console.log('Got response:', data.response);
 
               addMessage('student', data.transcript);
               addMessage('avatar', data.response);
@@ -725,23 +637,23 @@
 
               updateVoiceStatus('speaking');
               isSpeakingResponse = true;
+              document.getElementById('speaking').classList.remove('hidden');
+              // Backend handles TTS + HeyGen LITE audio — no avatarSpeak() needed
+              break;
 
-              // Tell backend avatar is about to speak
-              if (audioWs?.readyState === WebSocket.OPEN) {
-                audioWs.send(JSON.stringify({ type: 'avatar_speaking' }));
-              }
-
-              // Fire-and-forget: avatar.speak() in async mode
-              // Completion handled by AVATAR_STOP_TALKING event
-              avatarSpeak(data.response);
+            case 'avatar_done':
+              // Backend signals avatar finished speaking (via HeyGen LITE speak_ended)
+              console.log('Avatar done speaking');
+              isSpeakingResponse = false;
+              document.getElementById('speaking').classList.add('hidden');
+              updateVoiceStatus('listening');
               break;
 
             case 'interrupt_detected':
-              // Backend VAD detected speech during avatar playback — stop and listen
-              console.log('⚡ Interrupt detected — stopping avatar');
-              _wasInterrupted = true;
+              // Backend VAD detected speech during avatar playback
+              console.log('Interrupt detected');
               isSpeakingResponse = false;
-              try { await avatar.interrupt(); } catch(e) {}
+              document.getElementById('speaking').classList.add('hidden');
               updateVoiceStatus('listening');
               break;
 
@@ -758,8 +670,8 @@
         audioWs.onclose = (e) => {
           console.log('Audio WebSocket closed:', e.code);
           isListening = false;
-          if (!isMuted) {
-            console.log('🔄 Reconnecting audio pipeline in 2s...');
+          if (shouldReconnect && !isMuted) {
+            console.log('Reconnecting audio pipeline in 2s...');
             setTimeout(startAudioPipeline, 2000);
           }
         };
@@ -798,16 +710,16 @@
 
         isListening = true;
         updateVoiceStatus('listening');
-        console.log('✅ Audio pipeline started (16kHz PCM → backend)');
+        console.log('Audio pipeline started (16kHz PCM -> backend)');
 
       } catch (e) {
-        console.error('❌ Failed to start audio pipeline:', e);
+        console.error('Failed to start audio pipeline:', e);
         updateVoiceStatus('muted');
       }
     }
 
     function stopAudioPipeline() {
-      console.log('🛑 Stopping audio pipeline...');
+      console.log('Stopping audio pipeline...');
       isListening = false;
 
       if (audioWorkletNode) {
@@ -822,8 +734,9 @@
         audioContext.close().catch(() => {});
         audioContext = null;
       }
-      if (audioWs?.readyState === WebSocket.OPEN) {
-        audioWs.close();
+      if (audioWs) {
+        audioWs.onclose = null;  // Prevent reconnect from firing
+        try { audioWs.close(); } catch(e) {}
       }
       audioWs = null;
     }
@@ -838,10 +751,10 @@
         isMuted = true;
         stopAudioPipeline();
         updateVoiceStatus('muted');
-        document.getElementById('mic-btn').textContent = '🔇';
+        document.getElementById('mic-btn').textContent = 'Muted';
       } else {
         isMuted = false;
-        document.getElementById('mic-btn').textContent = '🎤';
+        document.getElementById('mic-btn').textContent = 'Mic';
         startAudioPipeline();
       }
     }
@@ -860,6 +773,8 @@
     // Listen for play-explainer-video message from Electron main process
     // Since this is loaded with contextIsolation: false, we can use window events
     window.addEventListener('message', (event) => {
+      // Only accept messages from same origin (Electron main process)
+      if (event.origin !== 'file://' && event.origin !== window.location.origin) return;
       if (event.data && event.data.type === 'play-explainer-video') {
         playExplainerVideo(event.data.payload);
       }
