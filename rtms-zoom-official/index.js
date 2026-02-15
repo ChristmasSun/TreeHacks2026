@@ -624,26 +624,17 @@ RTMSManager.on('video', async ({ buffer, userId, userName, timestamp, meetingId 
 
   console.log(`[Video] Frame from ${userName} (${buffer.length} bytes)`);
 
-  // Forward to Python backend for expression analysis
-  const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
-  try {
-    await fetch(`${backendUrl}/api/rtms/video-frame`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        meeting_uuid: meetingId,
-        user_id: userId,
-        user_name: userName,
-        timestamp: timestamp,
-        frame_base64: buffer.toString('base64')
-      })
-    });
-  } catch (error) {
-    // Don't log every failure to avoid spam
-    if (Math.random() < 0.1) {
-      console.error('[Video] Failed to forward frame:', error.message);
+  // Broadcast via WebSocket to local Python backend
+  broadcastToFrontendClients({
+    type: 'video_frame',
+    data: {
+      meeting_uuid: meetingId,
+      user_id: userId,
+      user_name: userName,
+      timestamp: timestamp,
+      frame_base64: buffer.toString('base64')
     }
-  }
+  });
 });
 
 await RTMSManager.start();

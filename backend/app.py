@@ -143,6 +143,58 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to load Pocket TTS: {e}")
 
+    # Start Render WebSocket client for video frames
+    try:
+        from services.render_ws_client import register_handler, start_render_client
+        from services.chatbot_ws_handler import setup_chatbot_handlers
+        import asyncio
+        import base64
+
+        # Register video frame handler
+        async def handle_video_frame(event: dict):
+            """Process video frames from RTMS via Render WebSocket."""
+            data = event.get("data", {})
+            user_id = data.get("user_id", "unknown")
+            user_name = data.get("user_name", "Unknown")
+            frame_b64 = data.get("frame_base64", "")
+
+            if not frame_b64:
+                return
+
+            try:
+                frame_bytes = base64.b64decode(frame_b64)
+                logger.info(f"[Video] Processing frame from {user_name} ({len(frame_bytes)} bytes)")
+
+                # Run FER analysis
+                metrics = await demeanor_service.analyze_frame(user_id, user_name, frame_bytes)
+
+                # Broadcast to frontend
+                await manager.broadcast({
+                    "type": "DEMEANOR_UPDATE",
+                    "payload": {
+                        "user_id": user_id,
+                        "user_name": user_name,
+                        "engagement_score": metrics.engagement_score,
+                        "attention": metrics.attention,
+                        "expression": metrics.expression,
+                        "timestamp": metrics.timestamp,
+                    }
+                })
+                logger.info(f"[Video] {user_name}: {metrics.expression}, engagement={metrics.engagement_score}")
+            except Exception as e:
+                logger.error(f"[Video] Frame processing error: {e}")
+
+        register_handler("video_frame", handle_video_frame)
+        setup_chatbot_handlers()
+        logger.info("Registered video_frame and chatbot handlers")
+
+        # Start Render WebSocket client in background
+        render_url = os.getenv("RENDER_WS_URL", "wss://rtms-webhook.onrender.com/ws")
+        asyncio.create_task(start_render_client(render_url))
+        logger.info(f"Started Render WebSocket client: {render_url}")
+    except Exception as e:
+        logger.error(f"Failed to start Render WebSocket client: {e}")
+
 
 # Mount static files for audio and videos
 static_dir = os.path.join(os.path.dirname(__file__), "static")
