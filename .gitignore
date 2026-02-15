@@ -54,7 +54,6 @@ outputs/
 # Generated videos
 backend/static/videos/
 *.mp4
-*.wav
 *.mp3
 
 # Experiments and docs (local only)
