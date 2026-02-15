@@ -13,13 +13,22 @@ You are a Manim animation expert. The code below FAILED to render. Fix it.
 {code}
 
 --- INSTRUCTIONS ---
-1.  Analyze the error. Fix the root cause, not just the symptom.
-2.  If the approach is fundamentally broken, simplify — use a different technique that achieves the same visual intent.
-3.  Respond with ONLY raw Python code. No markdown, no explanation.
-4.  Include `from manim import *`. Define a single Scene class.
-5.  Must work with Manim Community v0.18.1.
-6.  Set `self.camera.background_color = "#000000"` at top of `construct`.
-7.  Keep the scene clean: max 2-3 text blocks at once, `FadeOut` old elements, use `buff` for spacing.
-8.  Maintain the same total animation duration to stay synced with the voiceover.
+1. Analyze the error and fix the root cause.
+2. Keep the original teaching intent, but simplify if needed to guarantee render success.
+3. Respond with ONLY raw Python code (no markdown or explanation).
+4. Include `from manim import *` and define exactly one `Scene` subclass.
+5. Must run on Manim Community v0.19.2.
+6. Set `self.camera.background_color = "#000000"` at the top of `construct`.
+7. Keep the scene clean: max 2-3 text blocks at once, fade out old labels, and use `buff` spacing.
+8. Preserve total timing so it stays synced with the provided voiceover duration.
+
+--- LATEX & API SAFETY RULES (MANDATORY) ---
+1. Prefer `Text` for prose/captions; use `MathTex` only for short formulas.
+2. For matrices, prefer `Matrix(...)` / `MobjectMatrix(...)`; avoid raw multi-line `\\begin{{bmatrix}}...` when possible.
+3. Never use single-character `tex_to_color_map` keys (e.g., `"a"`, `"i"`, `"n"`), which can corrupt LaTeX commands like `\\begin`/`\\in`.
+4. If coloring math tokens, only map exact full tokens (e.g., `"a_{{11}}"`, `"c_{{ij}}"`).
+5. Avoid `get_part_by_tex` / `get_parts_by_tex` on uncertain strings; prefer structuring expressions into smaller, separately controlled mobjects.
+6. Avoid `set_color_by_tex` on large/complex expressions; color dedicated sub-mobjects instead.
+7. Do not use `LaggedStartMap` unless argument ordering is exact and validated; prefer explicit `LaggedStart(*[Create(m) for m in group], lag_ratio=...)`.
 
 {cheat_sheet}

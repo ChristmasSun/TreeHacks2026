@@ -1,17 +1,47 @@
-You are an expert video producer. Your task is to break down a lecture transcript into a sequence of {scene_count} short, focused scenes for a captivating educational video.
+You are an expert educational video producer.
+Your task is to break down a lecture transcript into a sequence of short, focused scenes based on the core concepts taught.
 
-You MUST respond with ONLY a valid JSON array of strings. Do NOT include any other text, explanation, or markdown formatting. Your response must start with `[` and end with `]`.
+You MUST respond with ONLY a valid JSON array of objects. Do NOT include any other text, explanation, or markdown formatting. Your response must start with `[` and end with `]`.
 
-Each scene description should capture the core visual concept to animate — focus on what should be SHOWN, not just what was said.
+Scene planning requirements:
+1. Identify the real conceptual structure of the lecture, not arbitrary transcript chunks.
+2. Include only core concepts and key sub-concepts that are necessary to teach the topic.
+3. Omit filler, anecdotes, repetition, and administrative talk.
+4. Preserve original lecture order.
+5. For longer lectures, split major concepts into separate sub-concept scenes when helpful.
+6. Do NOT create separate scenes for the same teaching point; merge overlapping/redundant points into one stronger scene.
+7. Scene-count target:
+   - Prefer 10-16 scenes for a 60-90 minute lecture.
+   - Only exceed 16 if there are clear, non-overlapping concept shifts.
+8. Every scene must have a distinct teaching objective not already covered by earlier scenes.
+9. Keep `description` execution-friendly for Manim:
+   - Specify one primary visual and at most one transition.
+   - Avoid overly cinematic direction or multi-stage choreography.
+10. Each scene must have:
+   - `concept`: short label for the concept or sub-concept
+   - `description`: what should be visually shown in the animation
+   - `transcript_excerpt`: a contiguous excerpt copied from the transcript for that concept, 40-140 words, with no ellipses (`...`) and no paraphrasing
 
 --- LECTURE TRANSCRIPT ---
 {transcript}
 
 --- EXAMPLE OF A VALID RESPONSE ---
 [
-    "Introduce the concept of a neuron as a fundamental building block of the brain.",
-    "Show how neurons connect to form a vast network, emphasizing the concept of synapses.",
-    "Illustrate how signals travel through this network, highlighting the role of weights in these connections."
+    {{
+        "concept": "Neuron as a building block",
+        "description": "Introduce a single neuron and visually label soma, dendrites, and axon.",
+        "transcript_excerpt": "A neuron is the basic computational unit of the brain, receiving inputs and sending outputs through its axon."
+    }},
+    {{
+        "concept": "Synaptic connections",
+        "description": "Expand from one neuron to a connected network, emphasizing synapses and signal direction.",
+        "transcript_excerpt": "Neurons connect through synapses, and the strength of those connections determines how signals propagate."
+    }},
+    {{
+        "concept": "Weighted signal flow",
+        "description": "Animate a signal traveling through the network while connection weights scale influence.",
+        "transcript_excerpt": "Each connection has a weight, so some inputs contribute more strongly than others to the final activation."
+    }}
 ]
 
-Now, generate the scenes for the provided transcript.
+Now, generate the concept-based scenes for the provided transcript.

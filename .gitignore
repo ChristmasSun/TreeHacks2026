@@ -18,6 +18,7 @@ output/
 # Experiments and docs (local only)
 experiments/
 docs/
+test-output/
 
 # OS
 .DS_Store

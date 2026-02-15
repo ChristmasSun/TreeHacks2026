@@ -26,9 +26,28 @@ def main():
         default="output",
         help="Output directory for generated videos (default: output)",
     )
+    parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="Number of scenes to process concurrently (default: 4 or PIPELINE_CLIP_CONCURRENCY).",
+    )
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=None,
+        help="Maximum render/correction attempts per scene (default: 3 or PIPELINE_MAX_RENDER_ATTEMPTS).",
+    )
     args = parser.parse_args()
 
-    result = asyncio.run(run(args.url, args.output))
+    result = asyncio.run(
+        run(
+            args.url,
+            args.output,
+            clip_concurrency=args.concurrency,
+            max_render_attempts=args.max_attempts,
+        )
+    )
 
     if result:
         print(f"\nDone! Video saved to: {result}")

@@ -108,16 +108,49 @@ def ensure_rate_functions_usage(code: str) -> str:
 
 def fix_spacing_issues(code: str) -> str:
     """Automatically fixes common spacing/overlap issues in generated code."""
-    def ensure_buff(pattern, default_buff):
-        def replacer(match):
-            if "buff=" not in match.group(0):
-                return match.group(0).rstrip(")") + f", buff={default_buff})"
-            return match.group(0)
-        return lambda c: re.sub(pattern, replacer, c)
+    def add_default_kwarg_to_method_calls(
+        src: str, method_name: str, kwarg: str, default_value: str
+    ) -> str:
+        token = f".{method_name}("
+        out: list[str] = []
+        i = 0
+        n = len(src)
 
-    code = ensure_buff(r"\.next_to\([^)]+\)", 0.5)(code)
-    code = ensure_buff(r"\.arrange\([^)]+\)", 0.4)(code)
-    code = ensure_buff(r"\.to_edge\([^)]+\)", 0.5)(code)
+        while i < n:
+            j = src.find(token, i)
+            if j == -1:
+                out.append(src[i:])
+                break
+
+            out.append(src[i:j])
+
+            args_start = j + len(token)
+            depth = 1
+            k = args_start
+            while k < n and depth > 0:
+                ch = src[k]
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                k += 1
+
+            # Unbalanced parentheses: keep the tail unchanged.
+            if depth != 0:
+                out.append(src[j:])
+                break
+
+            args = src[args_start : k - 1]
+            if f"{kwarg}=" not in args:
+                args = f"{args}, {kwarg}={default_value}"
+            out.append(f".{method_name}({args})")
+            i = k
+
+        return "".join(out)
+
+    code = add_default_kwarg_to_method_calls(code, "next_to", "buff", "0.5")
+    code = add_default_kwarg_to_method_calls(code, "arrange", "buff", "0.4")
+    code = add_default_kwarg_to_method_calls(code, "to_edge", "buff", "0.5")
     return code
 
 
