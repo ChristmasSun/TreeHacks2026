@@ -1023,15 +1023,25 @@ async def handle_chatbot_notification(payload: dict) -> dict:
     - accountId: Account ID
     - userName: User's name
     """
-    to_jid = payload.get("toJid")
-    cmd = payload.get("cmd", "").strip().lower()
+    to_jid = payload.get("toJid") or payload.get("userJid")
+    raw_cmd = payload.get("cmd", "").strip()
+    cmd = raw_cmd.lower()
+    normalized_cmd = cmd.lstrip("/")
     account_id = payload.get("accountId")
+    user_jid = payload.get("userJid")
     user_name = payload.get("userName", "Student")
 
     logger.info(f"Chatbot command from {user_name}: {cmd}")
 
+    if not to_jid or not account_id:
+        logger.error(
+            "Invalid chatbot payload: missing toJid/userJid or accountId. "
+            f"to_jid={to_jid}, account_id={account_id}"
+        )
+        return {"success": False, "error": "invalid_payload"}
+
     # Handle /quiz command
-    if cmd.startswith("quiz") or cmd == "":
+    if normalized_cmd.startswith("quiz") or normalized_cmd.startswith("makequiz") or cmd == "":
         # Check if already in a quiz
         existing_session = get_quiz_session(to_jid)
         if existing_session:
@@ -1039,7 +1049,8 @@ async def handle_chatbot_notification(payload: dict) -> dict:
             await send_text_message(
                 to_jid=to_jid,
                 account_id=account_id,
-                text="You already have an active quiz! Answer the current question or type 'cancel' to quit."
+                text="You already have an active quiz! Answer the current question or type 'cancel' to quit.",
+                user_jid=user_jid
             )
             return {"success": True}
 
@@ -1051,7 +1062,8 @@ async def handle_chatbot_notification(payload: dict) -> dict:
                 await send_text_message(
                     to_jid=to_jid,
                     account_id=account_id,
-                    text="No lecture content available yet. Please wait for the professor to set up the quiz."
+                    text="No lecture content available yet. Please wait for the professor to set up the quiz.",
+                    user_jid=user_jid
                 )
                 return {"success": True}
 
@@ -1077,6 +1089,7 @@ async def handle_chatbot_notification(payload: dict) -> dict:
                 student_jid=to_jid,
                 account_id=account_id,
                 quiz=quiz,
+                user_jid=user_jid or "",
                 on_play_video=trigger_video_playback
             )
 
@@ -1085,7 +1098,8 @@ async def handle_chatbot_notification(payload: dict) -> dict:
                 to_jid=to_jid,
                 account_id=account_id,
                 topic=quiz.topic,
-                num_questions=len(quiz.questions)
+                num_questions=len(quiz.questions),
+                user_jid=user_jid
             )
 
             return {"success": True}
@@ -1096,22 +1110,24 @@ async def handle_chatbot_notification(payload: dict) -> dict:
             await send_text_message(
                 to_jid=to_jid,
                 account_id=account_id,
-                text=f"Sorry, I couldn't generate a quiz right now. Please try again later."
+                text="Sorry, I couldn't generate a quiz right now. Please try again later.",
+                user_jid=user_jid
             )
             return {"success": True}
 
     # Handle cancel command
-    if cmd == "cancel":
+    if normalized_cmd == "cancel":
         await cancel_quiz(to_jid)
         return {"success": True}
 
     # Handle help command
-    if cmd == "help":
+    if normalized_cmd == "help":
         from services.zoom_chatbot_service import send_text_message
         await send_text_message(
             to_jid=to_jid,
             account_id=account_id,
-            text="Commands:\n- /quiz: Start a quiz\n- cancel: Cancel current quiz\n- help: Show this message"
+            text="Commands:\n- /quiz: Start a quiz\n- cancel: Cancel current quiz\n- help: Show this message",
+            user_jid=user_jid
         )
         return {"success": True}
 
@@ -1120,7 +1136,8 @@ async def handle_chatbot_notification(payload: dict) -> dict:
     await send_text_message(
         to_jid=to_jid,
         account_id=account_id,
-        text=f"Hi {user_name}! Type /quiz to start a quiz on the lecture material."
+        text=f"Hi {user_name}! Type /quiz to start a quiz on the lecture material.",
+        user_jid=user_jid
     )
     return {"success": True}
 
@@ -1137,15 +1154,25 @@ async def handle_chatbot_button_click(payload: dict) -> dict:
     """
     action_item = payload.get("actionItem", {})
     action_value = action_item.get("value", "")
-    to_jid = payload.get("toJid")
+    to_jid = payload.get("toJid") or payload.get("userJid")
     account_id = payload.get("accountId")
     user_name = payload.get("userName", "Student")
+    user_jid = payload.get("userJid")
 
     logger.info(f"Button click from {user_name}: {action_value}")
+
+    if not to_jid or not account_id:
+        logger.error(
+            "Invalid button payload: missing toJid/userJid or accountId. "
+            f"to_jid={to_jid}, account_id={account_id}"
+        )
+        return {"success": False, "error": "invalid_payload"}
 
     # Handle start quiz button
     if action_value == "start_quiz":
         session = get_quiz_session(to_jid)
+        if session and user_jid and not session.user_jid:
+            session.user_jid = user_jid
         if session:
             await start_quiz(to_jid)
         return {"success": True}

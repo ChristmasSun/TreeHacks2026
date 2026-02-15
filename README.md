@@ -250,7 +250,7 @@ Then in Zoom Team Chat, message your bot with `/makequiz`.
 
 ```bash
 # Terminal 1: Backend
-cd backend && uvicorn app:app --reload --port 8000
+cd backend && uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2: RTMS Service (or deploy to Render)
 cd rtms-zoom-official && node index.js
