@@ -323,14 +323,6 @@ Each generates:
 
 ---
 
-## Team
-
-Built at **TreeHacks 2026** by:
-- Ved
-- Christmas Sun
-
----
-
 ## License
 
 MIT
