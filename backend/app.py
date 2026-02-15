@@ -4,10 +4,10 @@ FastAPI application with WebSocket support for Electron frontend
 from dotenv import load_dotenv
 load_dotenv()  # Load .env file
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 import json
@@ -146,6 +146,41 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "active_connections": len(manager.active_connections)
     }
+
+
+# OAuth callback for Zoom app installation
+@app.get("/oauth/callback")
+async def oauth_callback(code: str = None, error: str = None):
+    """
+    Handle OAuth callback from Zoom app installation.
+    For chatbot apps, we just need to acknowledge the installation.
+    """
+    if error:
+        return HTMLResponse(f"""
+        <html>
+            <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                <h1>Installation Failed</h1>
+                <p>Error: {error}</p>
+                <p>Please try again or contact support.</p>
+            </body>
+        </html>
+        """, status_code=400)
+
+    if code:
+        # For chatbot, we don't need to exchange the code for user tokens
+        # The client_credentials flow handles bot authentication
+        logger.info(f"Zoom app installed successfully (auth code received)")
+
+    return HTMLResponse("""
+    <html>
+        <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+            <h1>Quiz Bot Installed Successfully!</h1>
+            <p>The quiz bot has been added to your Zoom account.</p>
+            <p>You can now use <code>/quiz</code> in any Zoom Team Chat to start a quiz.</p>
+            <p>You can close this window.</p>
+        </body>
+    </html>
+    """)
 
 
 # Professor Dashboard
