@@ -16,7 +16,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // S2S OAuth - Get access token to call Zoom APIs
+let cachedToken = null;
+let tokenExpiry = 0;
+
 async function getS2SAccessToken() {
+  // Return cached token if still valid
+  if (cachedToken && Date.now() < tokenExpiry) {
+    return cachedToken;
+  }
+
   const credentials = Buffer.from(`${config.s2sClientId}:${config.s2sClientSecret}`).toString('base64');
   const response = await fetch(`https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${config.accountId}`, {
     method: 'POST',
@@ -30,7 +38,48 @@ async function getS2SAccessToken() {
     console.error('[S2S] Failed to get token:', data);
     return null;
   }
-  return data.access_token;
+
+  cachedToken = data.access_token;
+  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000; // Refresh 1 min early
+  return cachedToken;
+}
+
+// Send chat message to a live meeting
+async function sendMeetingChatMessage(meetingId, message) {
+  try {
+    const token = await getS2SAccessToken();
+    if (!token) {
+      console.error('[Chat] No token available');
+      return false;
+    }
+
+    // meetingId might be a UUID with special chars, need to encode
+    const encodedMeetingId = encodeURIComponent(encodeURIComponent(meetingId));
+
+    const response = await fetch(`https://api.zoom.us/v2/live_meetings/${encodedMeetingId}/chat/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: message,
+        to_channel: 'everyone' // Send to everyone in meeting
+      })
+    });
+
+    if (response.ok) {
+      console.log(`[Chat] Sent message to meeting ${meetingId}`);
+      return true;
+    } else {
+      const errorText = await response.text();
+      console.error(`[Chat] Failed to send message: ${response.status} ${errorText}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('[Chat] Error sending message:', error);
+    return false;
+  }
 }
 
 // Start RTMS for a meeting via API
@@ -302,6 +351,88 @@ RTMSManager.on('transcript', async ({ text, userId, userName, timestamp, meeting
   // Broadcast to frontend WebSocket clients
   broadcastToFrontendClients({
     type: 'transcript',
+    data: {
+      speaker: userName,
+      text: text,
+      timestamp: timestamp || Date.now(),
+      meetingId: meetingId
+    }
+  });
+});
+
+// Handle chat messages from meeting
+RTMSManager.on('chat', async ({ text, userId, userName, timestamp, meetingId, streamId, productType }) => {
+  console.log(`[Chat] [${userName}]: ${text}`);
+
+  // Check for quiz command
+  if (text.toLowerCase().includes('/quiz') || text.toLowerCase() === 'quiz') {
+    console.log(`[Quiz] Quiz command received from ${userName} in meeting ${meetingId}`);
+
+    // Send acknowledgment
+    await sendMeetingChatMessage(meetingId, `Hi ${userName}! Starting quiz... 🎓`);
+
+    // Forward to Python backend to generate quiz
+    const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+    try {
+      const response = await fetch(`${backendUrl}/api/quiz/start-meeting-quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_id: meetingId,
+          user_name: userName,
+          user_id: userId
+        })
+      });
+
+      if (response.ok) {
+        const quizData = await response.json();
+        // Send first question to meeting chat
+        if (quizData.question) {
+          await sendMeetingChatMessage(meetingId, quizData.question);
+        }
+      } else {
+        await sendMeetingChatMessage(meetingId, "Sorry, couldn't start quiz. Try again later.");
+      }
+    } catch (error) {
+      console.error('[Quiz] Error starting quiz:', error);
+      await sendMeetingChatMessage(meetingId, "Quiz service unavailable. Please try again.");
+    }
+  }
+
+  // Check for quiz answers (A, B, C, D)
+  const answerMatch = text.trim().toUpperCase().match(/^([ABCD])$/);
+  if (answerMatch) {
+    const answer = answerMatch[1];
+    console.log(`[Quiz] Answer received from ${userName}: ${answer}`);
+
+    // Forward to Python backend
+    const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+    try {
+      const response = await fetch(`${backendUrl}/api/quiz/meeting-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_id: meetingId,
+          user_name: userName,
+          user_id: userId,
+          answer: answer
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.message) {
+          await sendMeetingChatMessage(meetingId, result.message);
+        }
+      }
+    } catch (error) {
+      console.error('[Quiz] Error processing answer:', error);
+    }
+  }
+
+  // Broadcast to frontend
+  broadcastToFrontendClients({
+    type: 'chat',
     data: {
       speaker: userName,
       text: text,
