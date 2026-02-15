@@ -78,6 +78,7 @@ export async function textToSpeech(text, options = {}) {
 export async function textToSpeechBase64(text, options = {}) {
   try {
     const audioBuffer = await textToSpeech(text, options);
+    if (!audioBuffer) return null;
     return audioBuffer.toString('base64');
   } catch (error) {
     console.error('❌ Error converting text to speech (base64):', error);

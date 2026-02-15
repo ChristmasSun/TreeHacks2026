@@ -197,16 +197,18 @@ RTMSManager.on('transcript', async ({ text, userId, userName, timestamp, meeting
 
     if (sharedServices.textToSpeech) {
       const base64Audio = await sharedServices.textToSpeech(aiResponse);
-      broadcastToFrontendClients({
-        type: 'audio',
-        data: base64Audio,
-        metadata: {
-          source: 'transcript_response',
-          originalText: text,
-          aiResponse: aiResponse,
-          timestamp: Date.now()
-        }
-      });
+      if (base64Audio) {
+        broadcastToFrontendClients({
+          type: 'audio',
+          data: base64Audio,
+          metadata: {
+            source: 'transcript_response',
+            originalText: text,
+            aiResponse: aiResponse,
+            timestamp: Date.now()
+          }
+        });
+      }
     }
   } catch (error) {
     console.error('Error processing transcript:', error);
