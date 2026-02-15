@@ -52,9 +52,9 @@ const DemeanorPanel: React.FC<DemeanorPanelProps> = ({ backendUrl }) => {
   const students = Object.values(metrics);
 
   const getScoreColor = (score: number) => {
-    if (score >= 0.7) return 'bg-green-500';
-    if (score >= 0.4) return 'bg-yellow-500';
-    return 'bg-red-500';
+    if (score >= 0.7) return 'bg-green-400/80';
+    if (score >= 0.4) return 'bg-yellow-400/80';
+    return 'bg-red-400/80';
   };
 
   const getScoreLabel = (score: number) => {
@@ -64,13 +64,13 @@ const DemeanorPanel: React.FC<DemeanorPanelProps> = ({ backendUrl }) => {
   };
 
   return (
-    <section className="bg-white/5 rounded-xl p-5 border border-white/10">
-      <h2 className="text-lg font-semibold mb-4">Student Engagement (RTMS Video)</h2>
+    <section className="glass-card p-6">
+      <h2 className="text-base font-medium tracking-wide text-white/80 mb-4">Student Engagement (RTMS Video)</h2>
 
       {students.length === 0 ? (
-        <div className="text-white/40 text-sm">
+        <div className="text-white/30 text-sm font-light">
           <p>No demeanor data yet. Engagement analysis starts when RTMS video frames are received.</p>
-          <p className="mt-1 text-xs text-white/30">
+          <p className="mt-1 text-xs text-white/20">
             Requires active Zoom meeting with RTMS video enabled.
           </p>
         </div>
@@ -79,16 +79,16 @@ const DemeanorPanel: React.FC<DemeanorPanelProps> = ({ backendUrl }) => {
           {/* Per-student cards */}
           <div className="grid grid-cols-2 gap-3">
             {students.map((s) => (
-              <div key={s.user_id} className="bg-white/5 rounded-lg p-3 flex items-center gap-3">
+              <div key={s.user_id} className="glass-card p-4 flex items-center gap-3">
                 <div className={`w-3 h-3 rounded-full ${getScoreColor(s.engagement_score)}`} />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm truncate">{s.user_name}</div>
-                  <div className="text-white/40 text-xs">
+                  <div className="text-white/30 text-xs font-light">
                     {getScoreLabel(s.engagement_score)} · {s.expression || 'neutral'}
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-lg font-semibold">{Math.round(s.engagement_score * 100)}%</div>
+                  <div className="text-lg font-light">{Math.round(s.engagement_score * 100)}%</div>
                 </div>
               </div>
             ))}
@@ -96,11 +96,11 @@ const DemeanorPanel: React.FC<DemeanorPanelProps> = ({ backendUrl }) => {
 
           {/* Summary */}
           {summary && summary.total_students > 0 && (
-            <div className="bg-white/5 rounded-lg p-3 mt-3">
-              <div className="text-white/40 text-xs mb-1">Session Summary</div>
-              <div className="flex items-center gap-4 text-sm">
-                <span>Avg Engagement: <strong>{Math.round((summary.avg_engagement || 0) * 100)}%</strong></span>
-                <span>Students Analyzed: <strong>{summary.total_students}</strong></span>
+            <div className="glass-card p-4 mt-3">
+              <div className="text-white/30 text-xs mb-1 font-medium tracking-wide">Session Summary</div>
+              <div className="flex items-center gap-4 text-sm font-light">
+                <span>Avg Engagement: <strong className="font-medium">{Math.round((summary.avg_engagement || 0) * 100)}%</strong></span>
+                <span>Students Analyzed: <strong className="font-medium">{summary.total_students}</strong></span>
               </div>
             </div>
           )}

@@ -40,33 +40,33 @@ const QuizControl: React.FC<QuizControlProps> = ({ backendUrl, lectureLoaded, st
   }, [backendUrl, onLog]);
 
   return (
-    <section className="bg-white/5 rounded-xl p-5 border border-white/10">
-      <h2 className="text-lg font-semibold mb-4">Quiz via Zoom Team Chat</h2>
+    <section className="glass-card p-6">
+      <h2 className="text-base font-medium tracking-wide text-white/80 mb-4">Quiz via Zoom Team Chat</h2>
 
       {!lectureLoaded ? (
-        <p className="text-white/40 text-sm">Load lecture content first to enable quizzes.</p>
+        <p className="text-white/30 text-sm font-light">Load lecture content first to enable quizzes.</p>
       ) : (
         <div className="space-y-4">
           <div className="flex items-center gap-4">
             <button
               onClick={launchQuiz}
               disabled={isLaunching || studentCount === 0}
-              className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
+              className="px-6 py-2.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/20 disabled:bg-white/[0.04] disabled:text-white/30 disabled:border-white/[0.06] disabled:cursor-not-allowed rounded-xl font-medium transition-all"
             >
               {isLaunching ? 'Sending Quiz...' : 'Send Quiz to Students'}
             </button>
-            <span className="text-sm text-white/40">
+            <span className="text-sm text-white/40 font-light">
               via Zoom Team Chat chatbot
             </span>
           </div>
 
           {quizResult && (
-            <div className="bg-purple-500/10 border border-purple-500/20 rounded-lg p-3 text-sm">
-              <div className="text-purple-300 font-medium mb-1">Quiz Sent</div>
-              <div className="text-white/60">
+            <div className="glass-card p-4 border-purple-500/20">
+              <div className="text-purple-300 font-medium text-sm mb-1">Quiz Sent</div>
+              <div className="text-white/50 text-sm font-light">
                 {quizResult.students_sent} students, {quizResult.question_count} questions
               </div>
-              <div className="text-white/40 text-xs mt-1">
+              <div className="text-white/30 text-xs mt-1 font-light">
                 Students will see the quiz in Zoom Team Chat. Wrong answers trigger Manim explainer videos.
               </div>
             </div>

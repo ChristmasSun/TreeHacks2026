@@ -2,12 +2,18 @@ import os
 import asyncio
 
 
-async def download_audio(url: str, output_dir: str) -> str:
-    """Download audio from a YouTube video URL using yt-dlp."""
+async def download_audio(url: str, output_dir: str, start_time: str = "1:25") -> str:
+    """Download audio from a YouTube video URL using yt-dlp.
+
+    Args:
+        url: YouTube video URL.
+        output_dir: Directory to save the audio file.
+        start_time: Start timestamp to trim from (e.g. "1:25"). Pass "" to disable.
+    """
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "audio.mp3")
 
-    print(f"[Download] Downloading audio from {url}...")
+    print(f"[Download] Downloading audio from {url} (starting at {start_time or '0:00'})...")
 
     cmd = [
         "yt-dlp",
@@ -16,8 +22,13 @@ async def download_audio(url: str, output_dir: str) -> str:
         "--audio-quality", "0",       # best quality
         "-o", output_path,
         "--no-playlist",
-        url,
     ]
+
+    if start_time:
+        # --download-sections "*start-inf" downloads from start to end
+        cmd += ["--download-sections", f"*{start_time}-inf", "--force-keyframes-at-cuts"]
+
+    cmd.append(url)
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
