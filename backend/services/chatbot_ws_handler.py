@@ -25,8 +25,18 @@ from .quiz_generator import load_quiz_from_json
 
 logger = logging.getLogger(__name__)
 
-# Path to quiz data
-QUIZ_DATA_DIR = os.getenv("QUIZ_DATA_DIR", "outputs/think-fast-talk-smart")
+# Get quiz data directory from app.py's global (set when professor loads lecture)
+def get_quiz_data_dir():
+    """Get the currently loaded quiz output directory from app.py."""
+    try:
+        import sys
+        app_module = sys.modules.get('app')
+        if app_module and hasattr(app_module, 'quiz_video_output_dir'):
+            return app_module.quiz_video_output_dir
+    except:
+        pass
+    # Fallback to default
+    return os.path.join(os.path.dirname(__file__), "../../outputs/think-fast-talk-smart")
 
 
 async def handle_chatbot_webhook(event: dict):
@@ -142,8 +152,10 @@ async def handle_makequiz_command(student_jid: str, account_id: str, user_name: 
         )
         return
 
-    # Try to load quiz data
-    quiz_file = os.path.join(QUIZ_DATA_DIR, "quiz_questions.json")
+    # Try to load quiz data from currently loaded lecture directory
+    quiz_data_dir = get_quiz_data_dir()
+    quiz_file = os.path.join(quiz_data_dir, "quiz_questions.json")
+    logger.info(f"Looking for quiz at: {quiz_file}")
 
     try:
         quiz = load_quiz_from_json(quiz_file)

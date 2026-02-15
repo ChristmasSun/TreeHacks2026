@@ -26,12 +26,9 @@ const QuizControl: React.FC<QuizControlProps> = ({ backendUrl, lectureLoaded, st
       });
       const data = await res.json();
 
-      if (data.success) {
-        setQuizResult(data);
-        onLog(`Quiz sent to ${data.students_sent} students (${data.question_count} questions)`, 'success');
-      } else {
-        onLog(`Quiz launch failed: ${data.error || 'Unknown error'}`, 'error');
-      }
+      setQuizResult(data);
+      const msg = data.message || `Quiz ready! ${data.students_sent || 0} students notified. Others can type /makequiz in Zoom Team Chat.`;
+      onLog(msg, 'success');
     } catch (e: any) {
       onLog(`Quiz launch error: ${e.message}`, 'error');
     } finally {

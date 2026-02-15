@@ -259,18 +259,25 @@ app.whenReady().then(async () => {
         openAvatarWindow(registeredStudent?.name || 'Student');
       }
 
-      // Handle explainer video playback for quiz
+      // Handle explainer video playback for quiz - only if it's for this student
       if (data.type === 'PLAY_EXPLAINER_VIDEO') {
-        console.log('Playing explainer video:', data.payload?.concept);
-        if (avatarWindow) {
-          avatarWindow.webContents.send('play-explainer-video', data.payload);
-        } else {
-          openAvatarWindow(registeredStudent?.name || 'Student');
-          setTimeout(() => {
-            if (avatarWindow) {
-              avatarWindow.webContents.send('play-explainer-video', data.payload);
-            }
-          }, 2000);
+        const targetEmail = data.payload?.student_email;
+        const isForMe = !targetEmail || targetEmail === registeredStudent?.email;
+
+        if (isForMe && registeredStudent) {
+          console.log('Playing explainer video:', data.payload?.concept);
+          if (avatarWindow) {
+            avatarWindow.webContents.send('play-explainer-video', data.payload);
+          } else {
+            openAvatarWindow(registeredStudent?.name || 'Student');
+            setTimeout(() => {
+              if (avatarWindow) {
+                avatarWindow.webContents.send('play-explainer-video', data.payload);
+              }
+            }, 2000);
+          }
+        } else if (targetEmail) {
+          console.log(`Video is for ${targetEmail}, not me (${registeredStudent?.email})`);
         }
       }
     }

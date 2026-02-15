@@ -1235,12 +1235,15 @@ async def launch_quiz():
             errors.append(f"{info['name']}: {str(e)}")
             logger.error(f"Failed to send quiz to {email}: {e}")
 
+    # Always return success - students can use /makequiz themselves if DM failed
     return {
-        "success": students_sent > 0,
+        "success": True,
         "students_sent": students_sent,
+        "students_total": len(registered_students),
         "quiz_id": quiz.id,
         "question_count": len(quiz.questions),
-        "errors": errors,
+        "message": f"Quiz ready! {students_sent}/{len(registered_students)} students notified via DM. Others can type /makequiz in Zoom Team Chat.",
+        "errors": errors if students_sent < len(registered_students) else [],
     }
 
 
