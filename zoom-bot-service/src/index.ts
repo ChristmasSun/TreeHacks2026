@@ -4,6 +4,7 @@
 import dotenv from 'dotenv';
 import { BotManager } from './BotManager';
 import { createServer } from './server';
+import { RTMSTranscriptManager } from './RTMSTranscriptManager';
 
 // Load environment variables
 dotenv.config();
@@ -50,8 +51,28 @@ async function main() {
     console.log(`[Event] Audio from bot ${botId}, room ${roomId}: ${audioData.length} bytes`);
   });
 
-  // Create HTTP server
-  const app = createServer(botManager);
+  // Initialize RTMS Transcript Manager
+  const rtmsManager = new RTMSTranscriptManager({
+    clientId: process.env.ZOOM_SDK_KEY || process.env.ZOOM_CLIENT_ID || '',
+    clientSecret: process.env.ZOOM_SDK_SECRET || process.env.ZOOM_CLIENT_SECRET || '',
+    pythonBackendUrl: process.env.PYTHON_BACKEND_URL || 'http://localhost:8000'
+  });
+
+  // Set up RTMS event listeners
+  rtmsManager.on('rtms-joined', ({ meeting_uuid, room_id }) => {
+    console.log(`[RTMS] Joined session for meeting ${meeting_uuid}, room ${room_id}`);
+  });
+
+  rtmsManager.on('transcript', (data) => {
+    console.log(`[RTMS] Transcript: ${data.speaker_name}: ${data.text}`);
+  });
+
+  rtmsManager.on('rtms-error', ({ meeting_uuid, error }) => {
+    console.error(`[RTMS] Error for meeting ${meeting_uuid}:`, error);
+  });
+
+  // Create HTTP server with both bot and RTMS managers
+  const app = createServer(botManager, rtmsManager);
 
   // Start server
   const PORT = parseInt(process.env.PORT || '3001');
@@ -64,10 +85,11 @@ async function main() {
     console.log('API Endpoints:');
     console.log(`  GET  http://localhost:${PORT}/health`);
     console.log(`  POST http://localhost:${PORT}/bots/create`);
+    console.log(`  POST http://localhost:${PORT}/rtms/webhook`);
     console.log(`  GET  http://localhost:${PORT}/bots`);
     console.log(`  GET  http://localhost:${PORT}/stats`);
     console.log('');
-    console.log('Ready to receive bot creation requests!');
+    console.log('Ready to receive bot creation and RTMS requests!');
     console.log('=====================================');
   });
 
@@ -76,8 +98,11 @@ async function main() {
     console.log('\n🛑 Shutting down gracefully...');
 
     try {
-      await botManager.removeAllBots();
-      console.log('✓ All bots removed');
+      await Promise.all([
+        botManager.removeAllBots(),
+        rtmsManager.stopAllSessions()
+      ]);
+      console.log('✓ All bots and RTMS sessions stopped');
       process.exit(0);
     } catch (error) {
       console.error('Error during shutdown:', error);

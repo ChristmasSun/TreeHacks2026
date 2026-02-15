@@ -200,6 +200,89 @@ class HeyGenController:
             logger.error(f"Failed to send message to avatar in room {room_id}: {e}")
             raise
 
+    async def update_avatar_context_from_transcript(
+        self,
+        room_id: int,
+        speaker_name: str,
+        transcript_text: str,
+        respond: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update avatar with live transcript context from RTMS
+
+        Args:
+            room_id: Breakout room ID
+            speaker_name: Name of speaker from transcript
+            transcript_text: Transcribed text
+            respond: Whether avatar should respond to this input
+
+        Returns:
+            Response task result if respond=True, None otherwise
+        """
+        session_data = self.active_sessions.get(str(room_id))
+        if not session_data:
+            logger.warning(f"No active avatar session for room {room_id}")
+            return None
+
+        # Store transcript in session context
+        if "transcript_history" not in session_data:
+            session_data["transcript_history"] = []
+
+        session_data["transcript_history"].append({
+            "speaker": speaker_name,
+            "text": transcript_text,
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
+        # Keep only recent history (last 20 entries)
+        if len(session_data["transcript_history"]) > 20:
+            session_data["transcript_history"] = session_data["transcript_history"][-20:]
+
+        logger.info(f"[Room {room_id}] Transcript: {speaker_name}: {transcript_text}")
+
+        # Optionally trigger avatar response
+        if respond:
+            # Build context-aware response
+            context_message = self._build_context_message(session_data)
+            student_query = f"{speaker_name} said: {transcript_text}"
+
+            # For now, just acknowledge the input
+            # In production, this would go through an LLM to generate appropriate response
+            response_text = f"I heard you say: {transcript_text}. Let me help with that."
+
+            try:
+                result = await self.send_message_to_avatar(
+                    room_id=room_id,
+                    message=response_text
+                )
+                logger.debug(f"Avatar responded to transcript in room {room_id}")
+                return result
+            except Exception as e:
+                logger.error(f"Failed to trigger avatar response: {e}")
+                return None
+
+        return None
+
+    def _build_context_message(self, session_data: Dict[str, Any]) -> str:
+        """
+        Build formatted context from transcript history
+
+        Args:
+            session_data: Session data with transcript history
+
+        Returns:
+            Formatted context string
+        """
+        history = session_data.get("transcript_history", [])
+        if not history:
+            return ""
+
+        # Get last 5 exchanges
+        recent = history[-5:]
+        context_lines = [f"{entry['speaker']}: {entry['text']}" for entry in recent]
+
+        return "\n".join(context_lines)
+
     async def stop_avatar(self, room_id: int) -> bool:
         """
         Stop avatar session for a specific room

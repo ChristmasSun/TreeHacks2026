@@ -1,6 +1,9 @@
 """
 FastAPI application with WebSocket support for Electron frontend
 """
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -18,11 +21,34 @@ from services.session_orchestrator import SessionOrchestrator
 from services.llm_service import (
     generate_tutoring_response,
     set_lecture_context,
-    get_lecture_context
+    get_lecture_context,
+    set_active_meeting,
+    get_active_meeting,
+    fetch_rtms_transcripts
 )
 from services.tts_service import text_to_speech
 from services.rtms_transcription_service import RTMSTranscriptionService
 from services.heygen_controller import HeyGenController
+from services.zoom_chatbot_service import (
+    verify_webhook_signature,
+    generate_url_validation_response,
+    send_quiz_intro,
+    parse_answer_value,
+)
+from services.quiz_generator import (
+    generate_quiz_from_concepts,
+    generate_quiz_from_output_dir,
+    load_concept_video_mapping,
+)
+from services.quiz_session_manager import (
+    get_session as get_quiz_session,
+    create_session as create_quiz_session,
+    start_quiz,
+    handle_answer,
+    handle_video_completed,
+    cancel_quiz,
+    get_session_stats,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -104,9 +130,10 @@ async def startup_event():
     logger.info("Database initialized")
 
 
-# Mount static files for audio
+# Mount static files for audio and videos
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(os.path.join(static_dir, "audio"), exist_ok=True)
+os.makedirs(os.path.join(static_dir, "videos"), exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
@@ -149,17 +176,51 @@ async def set_context(data: dict):
 # Tutor Response Endpoint
 @app.post("/api/tutor-response")
 async def get_tutor_response(data: dict):
-    """Get LLM tutoring response for student question"""
+    """Get LLM tutoring response for student question with live meeting context"""
     student_message = data.get("message", "")
     student_name = data.get("student_name", "Student")
     history = data.get("history", [])
-    
+    meeting_id = data.get("meeting_id")  # Optional - will auto-detect if not provided
+    was_interrupted = data.get("was_interrupted", False)  # True if student interrupted avatar
+
     response = await generate_tutoring_response(
         student_message=student_message,
         student_name=student_name,
-        conversation_history=history
+        conversation_history=history,
+        meeting_id=meeting_id,
+        was_interrupted=was_interrupted
     )
     return {"response": response}
+
+
+# Set active meeting for transcript context
+@app.post("/api/active-meeting")
+async def set_meeting(data: dict):
+    """Set the active meeting ID for transcript context"""
+    meeting_id = data.get("meeting_id")
+    if meeting_id:
+        set_active_meeting(meeting_id)
+        return {"success": True, "meeting_id": meeting_id}
+    return {"success": False, "error": "No meeting_id provided"}
+
+
+@app.get("/api/active-meeting")
+async def get_meeting():
+    """Get the active meeting ID"""
+    meeting_id = get_active_meeting()
+    return {"meeting_id": meeting_id}
+
+
+# Get live transcript context
+@app.get("/api/transcript-context")
+async def get_transcript_context(meeting_id: str = None):
+    """Get formatted transcript context from RTMS service"""
+    context = await fetch_rtms_transcripts(meeting_id)
+    return {
+        "meeting_id": meeting_id or get_active_meeting(),
+        "context": context,
+        "length": len(context) if context else 0
+    }
 
 
 # Tutor Response with Audio (LLM + TTS pipeline)
@@ -778,6 +839,425 @@ async def zoom_webhook(request_data: dict):
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return {"status": "error", "message": str(e)}
+
+
+# ============ Zoom Chatbot Webhook Endpoint ============
+
+# Store video output directory for quiz generation
+quiz_video_output_dir: str = os.getenv("QUIZ_VIDEO_OUTPUT_DIR", "output")
+
+
+async def trigger_video_playback(student_jid: str, concept: str, video_path: str):
+    """
+    Callback to trigger video playback in Electron app.
+    Broadcasts WebSocket message to all connected clients.
+    """
+    # Find registered student by JID or email pattern
+    student_email = None
+    for email, info in registered_students.items():
+        # JID often contains email-like identifier
+        if email in student_jid or student_jid in email:
+            student_email = email
+            break
+
+    await manager.broadcast({
+        "type": "PLAY_EXPLAINER_VIDEO",
+        "payload": {
+            "student_jid": student_jid,
+            "student_email": student_email,
+            "concept": concept,
+            "video_path": video_path,
+            "video_url": f"/static/videos/{os.path.basename(video_path)}" if video_path else None
+        }
+    })
+    logger.info(f"Triggered video playback for {student_jid}: {concept}")
+
+
+@app.post("/webhook/zoom-chatbot")
+async def zoom_chatbot_webhook(request: dict):
+    """
+    Handle Zoom Team Chat chatbot webhook events.
+
+    Events:
+    - endpoint.url_validation: Verify webhook URL
+    - bot_installed: Bot added to account
+    - bot_notification: User messages bot or uses slash command
+    - interactive_message_actions: Button clicked
+    - app_deauthorized: Bot removed
+    """
+    try:
+        event = request.get("event", "")
+        payload = request.get("payload", {})
+
+        logger.info(f"Chatbot webhook received: {event}")
+
+        # Handle URL validation (no signature verification needed)
+        if event == "endpoint.url_validation":
+            plain_token = payload.get("plainToken")
+            if plain_token:
+                response = generate_url_validation_response(plain_token)
+                logger.info("Chatbot URL validation successful")
+                return response
+            return {"error": "Missing plainToken"}
+
+        # Handle bot installed
+        if event == "bot_installed":
+            logger.info(f"Chatbot installed for account: {payload.get('accountId')}")
+            return {"success": True}
+
+        # Handle bot notification (slash commands, DMs)
+        if event == "bot_notification":
+            return await handle_chatbot_notification(payload)
+
+        # Handle button clicks
+        if event == "interactive_message_actions":
+            return await handle_chatbot_button_click(payload)
+
+        # Handle app deauthorized
+        if event == "app_deauthorized":
+            logger.info(f"Chatbot removed from account: {payload.get('accountId')}")
+            return {"success": True}
+
+        logger.info(f"Unhandled chatbot event: {event}")
+        return {"success": True}
+
+    except Exception as e:
+        logger.error(f"Chatbot webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+async def handle_chatbot_notification(payload: dict) -> dict:
+    """
+    Handle bot_notification event (slash commands, DMs).
+
+    Payload contains:
+    - toJid: Where to send response
+    - cmd: User's input text
+    - accountId: Account ID
+    - userName: User's name
+    """
+    to_jid = payload.get("toJid")
+    cmd = payload.get("cmd", "").strip().lower()
+    account_id = payload.get("accountId")
+    user_name = payload.get("userName", "Student")
+
+    logger.info(f"Chatbot command from {user_name}: {cmd}")
+
+    # Handle /quiz command
+    if cmd.startswith("quiz") or cmd == "":
+        # Check if already in a quiz
+        existing_session = get_quiz_session(to_jid)
+        if existing_session:
+            from services.zoom_chatbot_service import send_text_message
+            await send_text_message(
+                to_jid=to_jid,
+                account_id=account_id,
+                text="You already have an active quiz! Answer the current question or type 'cancel' to quit."
+            )
+            return {"success": True}
+
+        # Load concepts from video output directory
+        try:
+            mapping = load_concept_video_mapping(quiz_video_output_dir)
+            if not mapping:
+                from services.zoom_chatbot_service import send_text_message
+                await send_text_message(
+                    to_jid=to_jid,
+                    account_id=account_id,
+                    text="No lecture content available yet. Please wait for the professor to set up the quiz."
+                )
+                return {"success": True}
+
+            # Convert mapping to concepts list
+            concepts = [
+                {
+                    "concept": name,
+                    "description": data["description"],
+                    "video_path": data.get("video_path")
+                }
+                for name, data in mapping.items()
+            ]
+
+            # Generate quiz
+            quiz = await generate_quiz_from_concepts(
+                concepts=concepts,
+                num_questions=min(5, len(concepts)),
+                topic="Lecture Quiz"
+            )
+
+            # Create session with video callback
+            create_quiz_session(
+                student_jid=to_jid,
+                account_id=account_id,
+                quiz=quiz,
+                on_play_video=trigger_video_playback
+            )
+
+            # Send quiz intro
+            await send_quiz_intro(
+                to_jid=to_jid,
+                account_id=account_id,
+                topic=quiz.topic,
+                num_questions=len(quiz.questions)
+            )
+
+            return {"success": True}
+
+        except Exception as e:
+            logger.error(f"Failed to generate quiz: {e}")
+            from services.zoom_chatbot_service import send_text_message
+            await send_text_message(
+                to_jid=to_jid,
+                account_id=account_id,
+                text=f"Sorry, I couldn't generate a quiz right now. Please try again later."
+            )
+            return {"success": True}
+
+    # Handle cancel command
+    if cmd == "cancel":
+        await cancel_quiz(to_jid)
+        return {"success": True}
+
+    # Handle help command
+    if cmd == "help":
+        from services.zoom_chatbot_service import send_text_message
+        await send_text_message(
+            to_jid=to_jid,
+            account_id=account_id,
+            text="Commands:\n- /quiz: Start a quiz\n- cancel: Cancel current quiz\n- help: Show this message"
+        )
+        return {"success": True}
+
+    # Default response
+    from services.zoom_chatbot_service import send_text_message
+    await send_text_message(
+        to_jid=to_jid,
+        account_id=account_id,
+        text=f"Hi {user_name}! Type /quiz to start a quiz on the lecture material."
+    )
+    return {"success": True}
+
+
+async def handle_chatbot_button_click(payload: dict) -> dict:
+    """
+    Handle interactive_message_actions event (button clicks).
+
+    Payload contains:
+    - actionItem: {text, value} - the button clicked
+    - toJid: User's JID
+    - accountId: Account ID
+    - userName: User's name
+    """
+    action_item = payload.get("actionItem", {})
+    action_value = action_item.get("value", "")
+    to_jid = payload.get("toJid")
+    account_id = payload.get("accountId")
+    user_name = payload.get("userName", "Student")
+
+    logger.info(f"Button click from {user_name}: {action_value}")
+
+    # Handle start quiz button
+    if action_value == "start_quiz":
+        session = get_quiz_session(to_jid)
+        if session:
+            await start_quiz(to_jid)
+        return {"success": True}
+
+    # Handle cancel quiz button
+    if action_value == "cancel_quiz":
+        await cancel_quiz(to_jid)
+        return {"success": True}
+
+    # Handle answer buttons (answer_A_questionId)
+    answer_letter, question_id = parse_answer_value(action_value)
+    if answer_letter and question_id:
+        result = await handle_answer(
+            student_jid=to_jid,
+            question_id=question_id,
+            answer=answer_letter
+        )
+        logger.info(f"Answer result: {result}")
+        return {"success": True}
+
+    logger.warning(f"Unknown button action: {action_value}")
+    return {"success": True}
+
+
+@app.post("/api/quiz/video-completed")
+async def quiz_video_completed(data: dict):
+    """
+    Called when student finishes watching an explainer video.
+    Triggers follow-up question.
+
+    Body:
+    {
+        "student_jid": str
+    }
+    """
+    student_jid = data.get("student_jid")
+    if not student_jid:
+        raise HTTPException(status_code=400, detail="Missing student_jid")
+
+    result = await handle_video_completed(student_jid)
+    return result
+
+
+@app.get("/api/quiz/session/{student_jid}")
+async def get_quiz_session_api(student_jid: str):
+    """Get quiz session stats for a student."""
+    stats = get_session_stats(student_jid)
+    if not stats:
+        raise HTTPException(status_code=404, detail="No active quiz session")
+    return stats
+
+
+@app.post("/api/quiz/generate")
+async def generate_quiz_api(data: dict):
+    """
+    Generate a quiz from concepts.
+
+    Body:
+    {
+        "concepts": [{"concept": str, "description": str, "video_path": str?}],
+        "num_questions": int (optional),
+        "topic": str (optional)
+    }
+    """
+    concepts = data.get("concepts", [])
+    num_questions = data.get("num_questions")
+    topic = data.get("topic", "Quiz")
+
+    if not concepts:
+        raise HTTPException(status_code=400, detail="No concepts provided")
+
+    try:
+        quiz = await generate_quiz_from_concepts(
+            concepts=concepts,
+            num_questions=num_questions,
+            topic=topic
+        )
+        return {
+            "quiz_id": quiz.id,
+            "topic": quiz.topic,
+            "questions": [
+                {
+                    "id": q.id,
+                    "concept": q.concept,
+                    "question": q.question_text,
+                    "options": q.options,
+                    "video_path": q.video_path
+                }
+                for q in quiz.questions
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Quiz generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/quiz/load-videos")
+async def load_quiz_videos(data: dict):
+    """
+    Load videos from Manim pipeline output directory.
+    Copies/links videos to static directory for serving.
+
+    Body:
+    {
+        "output_dir": str (path to pipeline output, e.g., "output" or "/path/to/output")
+    }
+    """
+    import shutil
+    from pathlib import Path
+
+    output_dir = data.get("output_dir", quiz_video_output_dir)
+    output_path = Path(output_dir)
+
+    if not output_path.exists():
+        raise HTTPException(status_code=404, detail=f"Output directory not found: {output_dir}")
+
+    # Load concept mapping
+    mapping = load_concept_video_mapping(output_dir)
+    if not mapping:
+        raise HTTPException(status_code=404, detail="No concepts found in output directory")
+
+    # Copy videos to static directory
+    videos_static_dir = Path(static_dir) / "videos"
+    copied_videos = []
+
+    for concept, data_item in mapping.items():
+        video_path = data_item.get("video_path")
+        if video_path and Path(video_path).exists():
+            video_filename = Path(video_path).name
+            dest_path = videos_static_dir / video_filename
+
+            # Copy if not already there
+            if not dest_path.exists():
+                shutil.copy2(video_path, dest_path)
+                logger.info(f"Copied video: {video_filename}")
+
+            copied_videos.append({
+                "concept": concept,
+                "filename": video_filename,
+                "url": f"/static/videos/{video_filename}"
+            })
+
+    # Update global output dir
+    global quiz_video_output_dir
+    quiz_video_output_dir = output_dir
+
+    logger.info(f"Loaded {len(copied_videos)} videos from {output_dir}")
+
+    return {
+        "success": True,
+        "output_dir": output_dir,
+        "videos": copied_videos,
+        "count": len(copied_videos)
+    }
+
+
+@app.get("/api/quiz/videos")
+async def list_quiz_videos():
+    """List available quiz videos."""
+    from pathlib import Path
+
+    videos_dir = Path(static_dir) / "videos"
+    videos = []
+
+    if videos_dir.exists():
+        for video_file in videos_dir.glob("*.mp4"):
+            videos.append({
+                "filename": video_file.name,
+                "url": f"/static/videos/{video_file.name}",
+                "size_mb": round(video_file.stat().st_size / 1024 / 1024, 2)
+            })
+
+    return {
+        "videos": videos,
+        "count": len(videos),
+        "output_dir": quiz_video_output_dir
+    }
+
+
+@app.post("/api/quiz/set-output-dir")
+async def set_quiz_output_dir(data: dict):
+    """
+    Set the quiz video output directory.
+
+    Body:
+    {
+        "output_dir": str
+    }
+    """
+    global quiz_video_output_dir
+    output_dir = data.get("output_dir")
+
+    if not output_dir:
+        raise HTTPException(status_code=400, detail="Missing output_dir")
+
+    quiz_video_output_dir = output_dir
+    logger.info(f"Quiz output directory set to: {output_dir}")
+
+    return {"success": True, "output_dir": quiz_video_output_dir}
 
 
 # ============ RTMS API Endpoints ============

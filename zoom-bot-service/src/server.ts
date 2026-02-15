@@ -5,9 +5,10 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { BotManager } from './BotManager';
+import { RTMSTranscriptManager } from './RTMSTranscriptManager';
 import { CreateBotRequest, CreateBotResponse, BotStatus } from './types';
 
-export function createServer(botManager: BotManager) {
+export function createServer(botManager: BotManager, rtmsManager?: RTMSTranscriptManager) {
   const app = express();
 
   // Middleware
@@ -310,6 +311,61 @@ export function createServer(botManager: BotManager) {
     }
   });
 
+  // ==================== RTMS Endpoints ====================
+
+  if (rtmsManager) {
+    /**
+     * POST /rtms/webhook
+     * Handle RTMS webhook events from Zoom
+     */
+    app.post('/rtms/webhook', async (req: Request, res: Response) => {
+      try {
+        const { event, payload } = req.body;
+
+        console.log(`[RTMS Webhook] Received event: ${event}`);
+
+        // Extract room_id from query params if provided
+        const roomId = req.query.room_id ? parseInt(req.query.room_id as string) : undefined;
+
+        // Handle the webhook event
+        await rtmsManager.handleWebhookEvent(event, payload, roomId);
+
+        res.status(200).json({ status: 'received' });
+      } catch (error: any) {
+        console.error('[RTMS Webhook] Error:', error);
+        res.status(500).json({
+          error: 'Failed to process webhook',
+          message: error.message
+        });
+      }
+    });
+
+    /**
+     * GET /rtms/sessions
+     * Get active RTMS sessions
+     */
+    app.get('/rtms/sessions', (req: Request, res: Response) => {
+      const activeSessions = rtmsManager.getActiveSessions();
+      res.json({
+        sessions: activeSessions,
+        count: activeSessions.length
+      });
+    });
+
+    /**
+     * GET /rtms/sessions/:meeting_uuid/status
+     * Check if RTMS session is active
+     */
+    app.get('/rtms/sessions/:meeting_uuid/status', (req: Request, res: Response) => {
+      const { meeting_uuid } = req.params;
+      const isActive = rtmsManager.isSessionActive(meeting_uuid);
+      res.json({
+        meeting_uuid,
+        active: isActive
+      });
+    });
+  }
+
   // ==================== Statistics ====================
 
   /**
@@ -319,7 +375,7 @@ export function createServer(botManager: BotManager) {
   app.get('/stats', (req: Request, res: Response) => {
     const allBots = botManager.getAllBots();
 
-    const stats = {
+    const stats: any = {
       total_bots: allBots.length,
       by_status: {
         initializing: botManager.getBotsByStatus(BotStatus.INITIALIZING).length,
@@ -332,6 +388,13 @@ export function createServer(botManager: BotManager) {
       uptime_seconds: process.uptime(),
       memory_usage: process.memoryUsage()
     };
+
+    if (rtmsManager) {
+      stats.rtms_sessions = {
+        active: rtmsManager.getActiveSessions().length,
+        sessions: rtmsManager.getActiveSessions()
+      };
+    }
 
     res.json(stats);
   });

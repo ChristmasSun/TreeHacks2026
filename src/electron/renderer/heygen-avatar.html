@@ -176,20 +176,6 @@
       color: white;
     }
     .mode-btn:hover:not(.active) { background: rgba(255,255,255,0.1); }
-    .voice-chat-btn {
-      width: 100%;
-      padding: 16px;
-      border: none;
-      border-radius: 8px;
-      background: #10b981;
-      color: white;
-      font-size: 16px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .voice-chat-btn:hover { background: #059669; }
-    .voice-chat-btn.active { background: #ef4444; }
-    .voice-chat-btn:disabled { background: #374151; cursor: not-allowed; }
     .speaking-indicator {
       position: absolute;
       bottom: 12px;
@@ -219,6 +205,59 @@
       0%, 100% { opacity: 0.4; transform: scale(0.8); }
       50% { opacity: 1; transform: scale(1); }
     }
+    /* Explainer video overlay */
+    .explainer-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    .explainer-overlay.hidden { display: none; }
+    .explainer-header {
+      padding: 12px 20px;
+      text-align: center;
+    }
+    .explainer-header h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .explainer-header p {
+      font-size: 14px;
+      opacity: 0.7;
+    }
+    #explainer-video {
+      max-width: 100%;
+      max-height: calc(100% - 100px);
+      border-radius: 8px;
+    }
+    .explainer-controls {
+      padding: 12px 20px;
+      display: flex;
+      gap: 12px;
+    }
+    .explainer-btn {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .explainer-btn.primary {
+      background: #3b82f6;
+      color: white;
+    }
+    .explainer-btn.primary:hover { background: #2563eb; }
+    .explainer-btn.secondary {
+      background: #374151;
+      color: white;
+    }
+    .explainer-btn.secondary:hover { background: #4b5563; }
   </style>
 </head>
 <body>
@@ -239,6 +278,18 @@
         <button class="retry-btn" onclick="startAvatar()">Retry</button>
       </div>
       <video id="avatar-video" autoplay playsinline></video>
+      <!-- Explainer video overlay for quiz -->
+      <div class="explainer-overlay hidden" id="explainer-overlay">
+        <div class="explainer-header">
+          <h2 id="explainer-title">Explainer Video</h2>
+          <p id="explainer-concept">Watch to learn more about this concept</p>
+        </div>
+        <video id="explainer-video" controls></video>
+        <div class="explainer-controls">
+          <button class="explainer-btn secondary" onclick="skipExplainer()">Skip</button>
+          <button class="explainer-btn primary hidden" id="continue-btn" onclick="continueAfterExplainer()">Continue Quiz</button>
+        </div>
+      </div>
       <div class="speaking-indicator hidden" id="speaking">
         <div class="speaking-dots">
           <span></span><span></span><span></span>
@@ -249,19 +300,15 @@
     
     <div class="chat">
       <div class="mode-toggle">
-        <button id="mode-tutor" class="mode-btn active" onclick="setMode('tutor')">🤖 AI Tutor</button>
-        <button id="mode-voice" class="mode-btn" onclick="setMode('voice')">🎭 Voice Clone</button>
+        <div id="voice-status" class="mode-btn active" style="flex:1; cursor:default; text-align:center;">
+          🎤 Always Listening
+        </div>
       </div>
       <div class="messages" id="messages"></div>
       <div class="input-area" id="tutor-input">
-        <button id="mic-btn" class="mic-btn" onclick="toggleMic()" disabled title="Voice Input">🎤</button>
-        <input type="text" id="input" placeholder="Ask a question..." disabled>
+        <button id="mic-btn" class="mic-btn recording" onclick="toggleMic()" title="Mute/Unmute">🎤</button>
+        <input type="text" id="input" placeholder="🎤 Listening..." disabled>
         <button id="send-btn" onclick="sendMessage()" disabled>Send</button>
-      </div>
-      <div class="input-area hidden" id="voice-input">
-        <button id="voice-chat-btn" class="voice-chat-btn" onclick="toggleVoiceChat()" disabled>
-          🎤 Hold to Talk (Avatar mirrors you)
-        </button>
       </div>
     </div>
   </div>
@@ -274,8 +321,6 @@
     let conversationHistory = [];
     let mediaRecorder = null;
     let audioChunks = [];
-    let isRecording = false;
-    let currentMode = 'tutor';  // 'tutor' = HeyGen TTS, 'voice' = Custom TTS pipeline
     
     const params = new URLSearchParams(window.location.search);
     const studentName = params.get('name') || 'Student';
@@ -328,19 +373,42 @@
         
         avatar = new StreamingAvatar({ token });
         
-        avatar.on(StreamingEvents.STREAM_READY, (event) => {
+        avatar.on(StreamingEvents.STREAM_READY, async (event) => {
           console.log('Stream ready');
           const video = document.getElementById('avatar-video');
           video.srcObject = event.detail;
+
+          // Ensure audio plays by unmuting video element
+          video.muted = false;
+          video.volume = 1.0;
+
           video.play().catch(console.error);
           hideOverlays();
-          
+
           document.getElementById('input').disabled = false;
           document.getElementById('send-btn').disabled = false;
           document.getElementById('mic-btn').disabled = false;
-          document.getElementById('voice-chat-btn').disabled = false;
-          
-          addMessage('avatar', 'Hello ' + studentName + '! I am your AI tutor. What would you like to learn about?');
+
+          // Greeting message
+          const greeting = 'Hello ' + studentName + '! I\'m your AI Professor. I have context from the lecture, so just ask me anything!';
+          addMessage('avatar', greeting);
+
+          // Make avatar speak the greeting
+          isSpeakingResponse = true;
+          try {
+            await avatar.speak({
+              text: greeting,
+              taskType: 'talk',
+              taskMode: 'sync',
+            });
+          } catch (e) {
+            console.error('Greeting speak error:', e);
+          }
+
+          // Auto-start listening after greeting
+          isSpeakingResponse = false;
+          console.log('🎤 Auto-starting voice recognition...');
+          setTimeout(startListening, 500);
         });
         
         avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
@@ -350,10 +418,18 @@
         
         avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
           document.getElementById('speaking').classList.remove('hidden');
+          console.log('🗣️ Avatar started talking');
         });
-        
+
         avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
           document.getElementById('speaking').classList.add('hidden');
+          console.log('🗣️ Avatar stopped talking');
+          // Resume normal listening if we were speaking
+          if (isSpeakingResponse) {
+            isSpeakingResponse = false;
+            interruptTranscript = '';
+            setTimeout(startListening, 300);
+          }
         });
         
         const session = await avatar.createStartAvatar({
@@ -453,91 +529,445 @@
       }
     }
     
-    // Mode switching
-    window.setMode = function(mode) {
-      currentMode = mode;
-      document.getElementById('mode-tutor').classList.toggle('active', mode === 'tutor');
-      document.getElementById('mode-voice').classList.toggle('active', mode === 'voice');
-      document.getElementById('tutor-input').classList.toggle('hidden', mode === 'voice');
-      document.getElementById('voice-input').classList.toggle('hidden', mode === 'tutor');
-      
-      const modeText = mode === 'voice' ? 'Custom Voice (your cloned voice)' : 'AI Tutor (HeyGen voice)';
-      addMessage('avatar', 'Switched to ' + modeText + ' mode.');
-    }
-    
-    // Voice chat toggle (for voice clone mode)
-    window.toggleVoiceChat = function() {
-      if (!recognition) {
-        alert('Speech recognition not supported');
-        return;
-      }
-      
-      if (isRecording) {
-        recognition.stop();
-        stopRecording();
-      } else {
-        isRecording = true;
-        document.getElementById('voice-chat-btn').classList.add('active');
-        document.getElementById('voice-chat-btn').textContent = '🔴 Listening...';
-        recognition.start();
-      }
-    }
-    
     document.getElementById('input').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') window.sendMessage();
     });
-    
-    // Voice Input using Web Speech API
-    let recognition = null;
-    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = 'en-US';
-      
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        console.log('Recognized:', transcript);
-        document.getElementById('input').value = transcript;
-        window.sendMessage();
-      };
-      
-      recognition.onerror = (event) => {
-        console.error('Speech error:', event.error);
-        stopRecording();
-      };
-      
-      recognition.onend = () => {
-        stopRecording();
-      };
+
+    // ============ ALWAYS-ON VOICE CONVERSATION (DEEPGRAM) ============
+    const DEEPGRAM_API_KEY = 'a216e7ec6135ca418f0d51407e6162cf3f999a24';
+    let isListening = false;
+    let isSpeakingResponse = false;
+    let wasInterrupted = false;
+    let deepgramSocket = null;
+    let mediaStream = null;
+    let finalTranscript = '';
+    let silenceTimeout = null;
+    let interruptTranscript = '';  // Track speech during avatar talking
+
+    async function setupVoiceRecognition() {
+      console.log('🎤 Setting up Deepgram voice recognition...');
     }
-    
-    function stopRecording() {
-      isRecording = false;
-      document.getElementById('mic-btn').classList.remove('recording');
-      document.getElementById('voice-chat-btn').classList.remove('active');
-      document.getElementById('voice-chat-btn').textContent = '🎤 Hold to Talk (Avatar mirrors you)';
+
+    function updateVoiceStatus(status) {
+      const statusEl = document.getElementById('voice-status');
+      const micBtn = document.getElementById('mic-btn');
+
+      switch(status) {
+        case 'listening':
+          statusEl.textContent = '🎤 Listening...';
+          statusEl.style.background = '#10b981';
+          micBtn.classList.add('recording');
+          break;
+        case 'thinking':
+          statusEl.textContent = '🤔 Thinking...';
+          statusEl.style.background = '#f59e0b';
+          micBtn.classList.remove('recording');
+          break;
+        case 'speaking':
+          statusEl.textContent = '🗣️ Speaking (interrupt anytime)';
+          statusEl.style.background = '#3b82f6';
+          micBtn.classList.add('recording');  // Keep mic indicator on
+          break;
+        case 'muted':
+          statusEl.textContent = '🔇 Muted';
+          statusEl.style.background = '#6b7280';
+          micBtn.classList.remove('recording');
+          break;
+      }
     }
-    
+
+    async function startListening() {
+      if (isListening || isSpeakingResponse) return;
+
+      try {
+        console.log('🎤 Starting Deepgram...');
+
+        // Get microphone - use default sample rate, we'll resample if needed
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+
+        console.log('🎤 Got microphone stream');
+
+        // Use MediaRecorder with webm/opus - Deepgram handles this natively
+        const mediaRecorder = new MediaRecorder(mediaStream, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
+
+        // Connect to Deepgram - optimized for speed
+        const dgUrl = 'wss://api.deepgram.com/v1/listen?' + new URLSearchParams({
+          model: 'nova-2',
+          language: 'en-US',
+          smart_format: 'true',
+          interim_results: 'true',
+          utterance_end_ms: '800',      // Faster end detection
+          vad_events: 'true',
+          endpointing: '200',           // Faster endpointing
+          punctuate: 'true'
+        }).toString();
+
+        console.log('🔗 Connecting to Deepgram...');
+        deepgramSocket = new WebSocket(dgUrl, ['token', DEEPGRAM_API_KEY]);
+
+        deepgramSocket.onopen = () => {
+          console.log('✅ Deepgram connected! Starting recording...');
+          isListening = true;
+          finalTranscript = '';
+          updateVoiceStatus('listening');
+
+          // Send audio chunks to Deepgram
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0 && deepgramSocket?.readyState === WebSocket.OPEN) {
+              deepgramSocket.send(event.data);
+            }
+          };
+
+          // Start recording with 100ms chunks for lower latency
+          mediaRecorder.start(100);
+          window._mediaRecorder = mediaRecorder;
+        };
+
+        deepgramSocket.onmessage = async (msg) => {
+          const data = JSON.parse(msg.data);
+
+          // Handle utterance end (user stopped speaking)
+          if (data.type === 'UtteranceEnd') {
+            console.log('🔇 Utterance ended');
+            const textToProcess = isSpeakingResponse ? interruptTranscript.trim() : finalTranscript.trim();
+            if (textToProcess) {
+              if (isSpeakingResponse) {
+                // This was an interrupt - stop avatar and process
+                console.log('⚡ Processing interrupt:', textToProcess);
+                await handleInterrupt(textToProcess);
+                interruptTranscript = '';
+              } else {
+                processVoiceInput(textToProcess, false);
+              }
+              finalTranscript = '';
+            }
+            return;
+          }
+
+          const transcript = data.channel?.alternatives?.[0]?.transcript || '';
+          if (!transcript) return;
+
+          // Check if this is an interrupt (user speaking while avatar talks)
+          if (isSpeakingResponse) {
+            console.log(`⚡ INTERRUPT detected: "${transcript}"`);
+            if (data.is_final) {
+              interruptTranscript += ' ' + transcript;
+              // Trigger interrupt immediately on any final transcript
+              console.log('⚡ Triggering interrupt NOW');
+              await handleInterrupt(interruptTranscript.trim());
+              interruptTranscript = '';
+            } else {
+              // Show interim in input field
+              document.getElementById('input').value = '⚡ ' + transcript;
+            }
+            return;
+          }
+
+          console.log(`🎤 ${data.is_final ? 'FINAL' : 'interim'}: "${transcript}"`);
+
+          if (data.is_final) {
+            finalTranscript += ' ' + transcript;
+            document.getElementById('input').value = finalTranscript.trim();
+
+            // Clear any existing timeout
+            clearTimeout(silenceTimeout);
+
+            // Set timeout to process after 800ms of silence (faster response)
+            silenceTimeout = setTimeout(() => {
+              if (finalTranscript.trim() && !isSpeakingResponse) {
+                processVoiceInput(finalTranscript.trim(), false);
+                finalTranscript = '';
+              }
+            }, 800);
+          } else {
+            // Show interim
+            document.getElementById('input').value = finalTranscript + ' ' + transcript;
+          }
+        };
+
+        deepgramSocket.onerror = (e) => {
+          console.error('❌ Deepgram error:', e);
+          updateVoiceStatus('muted');
+        };
+
+        deepgramSocket.onclose = (e) => {
+          console.log('Deepgram closed:', e.code, e.reason);
+          isListening = false;
+          if (window._mediaRecorder?.state === 'recording') {
+            window._mediaRecorder.stop();
+          }
+          // Always try to restart unless explicitly muted
+          if (document.getElementById('mic-btn').textContent !== '🔇') {
+            console.log('🔄 Restarting Deepgram in 1s...');
+            setTimeout(startListening, 1000);
+          }
+        };
+
+      } catch (e) {
+        console.error('❌ Failed to start listening:', e);
+        updateVoiceStatus('muted');
+      }
+    }
+
+    function stopListening() {
+      console.log('🛑 Stopping listening...');
+      isListening = false;
+      clearTimeout(silenceTimeout);
+
+      if (window._mediaRecorder?.state === 'recording') {
+        window._mediaRecorder.stop();
+        window._mediaRecorder = null;
+      }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+      if (deepgramSocket?.readyState === WebSocket.OPEN) {
+        deepgramSocket.close();
+      }
+      deepgramSocket = null;
+    }
+
+    // Handle interrupt - INSTANTLY stop avatar audio and process new input
+    async function handleInterrupt(text) {
+      if (!text || !avatar) return;
+
+      console.log('⚡ INTERRUPT:', text);
+
+      // INSTANT: Mute the video element to stop audio immediately
+      const video = document.getElementById('avatar-video');
+      if (video) video.muted = true;
+
+      // Try to stop avatar via API (but don't wait for it)
+      avatar.interrupt().catch(() => {});
+
+      // Unmute after a brief moment (avatar will have new speech)
+      setTimeout(() => {
+        if (video) video.muted = false;
+      }, 500);
+
+      // Process the interrupt immediately
+      isSpeakingResponse = false;
+      interruptTranscript = '';
+      finalTranscript = '';
+      processVoiceInput(text, true);
+    }
+
+    async function processVoiceInput(text, wasInterrupted = false) {
+      if (!text || !avatar) return;
+      if (isSpeakingResponse && !wasInterrupted) return;
+
+      console.log('📝 Processing:', text, wasInterrupted ? '(interrupt)' : '');
+
+      // Set speaking flag but DON'T stop listening - we want to hear interrupts
+      isSpeakingResponse = true;
+      updateVoiceStatus('thinking');
+
+      addMessage('student', text);
+      conversationHistory.push({ role: 'student', text });
+      document.getElementById('input').value = '';
+
+      try {
+        // Get LLM response (with meeting context!)
+        console.log('🧠 Calling LLM...', wasInterrupted ? '(interrupt mode)' : '');
+        const llmRes = await fetch(backendUrl + '/api/tutor-response', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            student_name: studentName,
+            history: conversationHistory,
+            was_interrupted: wasInterrupted
+          })
+        });
+
+        let response;
+        if (llmRes.ok) {
+          const data = await llmRes.json();
+          response = data.response;
+          console.log('🤖 LLM response:', response);
+        } else {
+          response = "I'm sorry, I had trouble understanding. Could you repeat that?";
+        }
+
+        addMessage('avatar', response);
+        conversationHistory.push({ role: 'avatar', text: response });
+
+        updateVoiceStatus('speaking');
+
+        // Make avatar speak
+        console.log('🗣️ Avatar speaking...');
+        await avatar.speak({
+          text: response,
+          taskType: 'talk',
+          taskMode: 'sync',
+        });
+        console.log('✅ Avatar done speaking');
+
+      } catch (err) {
+        console.error('❌ Voice processing error:', err);
+        addMessage('avatar', "Sorry, there was an error. Please try again.");
+        // Reset state on error
+        isSpeakingResponse = false;
+        updateVoiceStatus('listening');
+      }
+      // Note: isSpeakingResponse is reset by AVATAR_STOP_TALKING event
+    }
+
+    // Toggle mic button (mute/unmute)
     window.toggleMic = function() {
-      if (!recognition) {
-        alert('Speech recognition not supported in this browser');
+      if (isListening) {
+        stopListening();
+        isSpeakingResponse = true;  // Prevent auto-restart
+        updateVoiceStatus('muted');
+        document.getElementById('mic-btn').textContent = '🔇';
+      } else {
+        isSpeakingResponse = false;
+        document.getElementById('mic-btn').textContent = '🎤';
+        startListening();
+      }
+    }
+
+    // Start avatar and auto-enable voice
+    window.startAvatar();
+
+    // ============ EXPLAINER VIDEO HANDLING ============
+    let currentExplainerJid = null;
+    const explainerOverlay = document.getElementById('explainer-overlay');
+    const explainerVideo = document.getElementById('explainer-video');
+    const explainerTitle = document.getElementById('explainer-title');
+    const explainerConcept = document.getElementById('explainer-concept');
+    const continueBtn = document.getElementById('continue-btn');
+
+    // Listen for play-explainer-video message from Electron main process
+    // Since this is loaded with contextIsolation: false, we can use window events
+    window.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'play-explainer-video') {
+        playExplainerVideo(event.data.payload);
+      }
+    });
+
+    // Also listen via electron IPC if available
+    if (typeof require !== 'undefined') {
+      try {
+        const { ipcRenderer } = require('electron');
+        ipcRenderer.on('play-explainer-video', (event, payload) => {
+          playExplainerVideo(payload);
+        });
+      } catch (e) {
+        console.log('IPC not available, using postMessage');
+      }
+    }
+
+    function playExplainerVideo(payload) {
+      console.log('🎬 Playing explainer video:', payload);
+
+      const { concept, video_url, video_path, student_jid } = payload;
+      currentExplainerJid = student_jid;
+
+      // Update UI
+      explainerTitle.textContent = 'Explainer: ' + (concept || 'Concept');
+      explainerConcept.textContent = 'Watch this video to understand the concept better';
+
+      // Determine video URL
+      let videoSrc = video_url;
+      if (!videoSrc && video_path) {
+        // Use local file path
+        videoSrc = video_path.startsWith('/') ? 'file://' + video_path : backendUrl + video_path;
+      }
+
+      if (!videoSrc) {
+        console.error('No video source provided');
+        addMessage('avatar', "Sorry, the explainer video isn't available right now.");
+        notifyVideoCompleted();
         return;
       }
-      
-      if (isRecording) {
-        recognition.stop();
-        stopRecording();
-      } else {
-        isRecording = true;
-        document.getElementById('mic-btn').classList.add('recording');
-        recognition.start();
-      }
+
+      // Pause avatar audio
+      const avatarVideoEl = document.getElementById('avatar-video');
+      if (avatarVideoEl) avatarVideoEl.muted = true;
+
+      // Stop listening while watching video
+      stopListening();
+
+      // Show overlay and play video
+      explainerVideo.src = videoSrc;
+      explainerOverlay.classList.remove('hidden');
+      continueBtn.classList.add('hidden');
+
+      explainerVideo.play().catch(e => {
+        console.error('Failed to play video:', e);
+        addMessage('avatar', "Couldn't play the video. Let's continue.");
+        hideExplainerAndContinue();
+      });
+
+      // Show continue button when video ends
+      explainerVideo.onended = () => {
+        console.log('🎬 Explainer video ended');
+        continueBtn.classList.remove('hidden');
+      };
+
+      explainerVideo.onerror = () => {
+        console.error('Video error');
+        addMessage('avatar', "There was an issue with the video. Let's continue.");
+        hideExplainerAndContinue();
+      };
     }
-    
-    // Start immediately
-    window.startAvatar();
+
+    window.skipExplainer = function() {
+      console.log('⏭️ Skipping explainer video');
+      explainerVideo.pause();
+      hideExplainerAndContinue();
+    };
+
+    window.continueAfterExplainer = function() {
+      console.log('➡️ Continuing after explainer');
+      hideExplainerAndContinue();
+    };
+
+    function hideExplainerAndContinue() {
+      explainerOverlay.classList.add('hidden');
+      explainerVideo.pause();
+      explainerVideo.src = '';
+
+      // Unmute avatar
+      const avatarVideoEl = document.getElementById('avatar-video');
+      if (avatarVideoEl) avatarVideoEl.muted = false;
+
+      // Notify backend that video is done
+      notifyVideoCompleted();
+
+      // Resume listening
+      setTimeout(startListening, 500);
+    }
+
+    async function notifyVideoCompleted() {
+      if (!currentExplainerJid) return;
+
+      try {
+        const response = await fetch(backendUrl + '/api/quiz/video-completed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_jid: currentExplainerJid })
+        });
+
+        if (response.ok) {
+          console.log('✅ Notified backend video completed');
+        }
+      } catch (e) {
+        console.error('Failed to notify video completion:', e);
+      }
+
+      currentExplainerJid = null;
+    }
   </script>
 </body>
 </html>

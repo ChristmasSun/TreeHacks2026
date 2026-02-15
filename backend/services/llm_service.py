@@ -1,6 +1,6 @@
 """
 LLM Service for AI Tutoring
-Uses OpenAI GPT-4 or falls back to a simple response
+Uses Cerebras (fast) or OpenAI GPT-4, with live RTMS transcript context
 """
 import os
 import logging
@@ -9,12 +9,18 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# RTMS service URL for fetching live transcripts
+RTMS_SERVICE_URL = os.getenv("RTMS_SERVICE_URL", "https://rtms-webhook.onrender.com")
+
 # Store lecture context globally (in production, use database)
 lecture_context: dict = {
     "topic": "",
     "key_points": "",
     "additional_notes": ""
 }
+
+# Store active meeting ID for context
+active_meeting_id: Optional[str] = None
 
 
 def set_lecture_context(topic: str, key_points: str, notes: str = ""):
@@ -33,65 +39,192 @@ def get_lecture_context() -> dict:
     return lecture_context
 
 
+def set_active_meeting(meeting_id: str):
+    """Set the active meeting ID for transcript context"""
+    global active_meeting_id
+    active_meeting_id = meeting_id
+    logger.info(f"Active meeting set: {meeting_id}")
+
+
+def get_active_meeting() -> Optional[str]:
+    """Get the active meeting ID"""
+    return active_meeting_id
+
+
+async def fetch_rtms_transcripts(meeting_id: Optional[str] = None) -> str:
+    """
+    Fetch live transcripts from RTMS service on Render
+
+    Args:
+        meeting_id: Specific meeting ID, or None to get most recent
+
+    Returns:
+        Formatted transcript context string
+    """
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            # If no meeting_id, try to find one with transcripts
+            if not meeting_id:
+                # Check for active meetings
+                meetings_response = await client.get(f"{RTMS_SERVICE_URL}/api/transcripts")
+                if meetings_response.status_code == 200:
+                    meetings_data = meetings_response.json()
+                    meetings = meetings_data.get("meetings", [])
+                    if meetings:
+                        # Use the meeting with most recent transcripts
+                        meeting_id = meetings[0].get("meetingId")
+
+            if not meeting_id:
+                return ""
+
+            # Fetch transcripts for this meeting
+            response = await client.get(f"{RTMS_SERVICE_URL}/api/transcripts/{meeting_id}")
+            if response.status_code == 200:
+                data = response.json()
+                full_context = data.get("fullContext", "")
+                count = data.get("count", 0)
+
+                if full_context:
+                    logger.info(f"Fetched {count} transcript entries for meeting {meeting_id}")
+                    return full_context
+
+            return ""
+    except Exception as e:
+        logger.warning(f"Failed to fetch RTMS transcripts: {e}")
+        return ""
+
+
 async def generate_tutoring_response(
     student_message: str,
     student_name: str,
-    conversation_history: Optional[list] = None
+    conversation_history: Optional[list] = None,
+    meeting_id: Optional[str] = None,
+    was_interrupted: bool = False
 ) -> str:
     """
-    Generate a tutoring response using LLM
-    
+    Generate a tutoring response using LLM with live meeting context
+
     Args:
         student_message: The student's question
         student_name: Name of the student
         conversation_history: Previous messages in the conversation
-    
+        meeting_id: Optional meeting ID for transcript context
+        was_interrupted: Whether the student interrupted the avatar
+
     Returns:
         AI tutor response
     """
-    api_key = os.getenv("OPENAI_API_KEY")
-    
-    if not api_key:
-        # Fallback response if no API key
-        logger.warning("No OpenAI API key - using fallback response")
-        return generate_fallback_response(student_message, student_name)
-    
-    try:
-        response = await call_openai(student_message, student_name, conversation_history)
-        return response
-    except Exception as e:
-        logger.error(f"LLM error: {e}")
-        return generate_fallback_response(student_message, student_name)
+    # Fetch live transcript context from RTMS
+    transcript_context = await fetch_rtms_transcripts(meeting_id or active_meeting_id)
+    if transcript_context:
+        logger.info(f"Using live transcript context ({len(transcript_context)} chars)")
+
+    # Try Cerebras first (faster), then OpenAI
+    cerebras_key = os.getenv("CEREBRAS_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+
+    if cerebras_key:
+        try:
+            response = await call_cerebras(
+                student_message, student_name, conversation_history, transcript_context, was_interrupted
+            )
+            return response
+        except Exception as e:
+            logger.error(f"Cerebras error: {e}")
+
+    if openai_key:
+        try:
+            response = await call_openai(
+                student_message, student_name, conversation_history, transcript_context
+            )
+            return response
+        except Exception as e:
+            logger.error(f"OpenAI error: {e}")
+
+    # Fallback response if no LLM available
+    logger.warning("No LLM API key available - using fallback response")
+    return generate_fallback_response(student_message, student_name)
+
+
+def build_system_prompt(student_name: str, transcript_context: str = "", was_interrupted: bool = False) -> str:
+    """Build the system prompt with lecture and transcript context"""
+
+    transcript_section = ""
+    if transcript_context:
+        # Only use last 2000 chars for speed
+        transcript_section = f"""
+LECTURE CONTEXT:
+{transcript_context[-2000:]}
+"""
+
+    interrupt_note = "The student interrupted - briefly acknowledge and answer their new question." if was_interrupted else ""
+
+    return f"""You are a friendly AI tutor helping {student_name} understand their lecture material.
+
+{transcript_section}
+RULES:
+- 2-3 sentences MAX (spoken aloud)
+- Reference the lecture when relevant
+- Be warm and conversational
+{interrupt_note}"""
+
+
+async def call_cerebras(
+    student_message: str,
+    student_name: str,
+    conversation_history: Optional[list] = None,
+    transcript_context: str = "",
+    was_interrupted: bool = False
+) -> str:
+    """Call Cerebras API for fast response"""
+    api_key = os.getenv("CEREBRAS_API_KEY")
+
+    system_prompt = build_system_prompt(student_name, transcript_context, was_interrupted)
+
+    messages = [{"role": "system", "content": system_prompt}]
+
+    # Add conversation history if provided
+    if conversation_history:
+        for msg in conversation_history[-6:]:  # Last 6 messages
+            messages.append({
+                "role": "user" if msg.get("role") == "student" else "assistant",
+                "content": msg.get("text", "")
+            })
+
+    messages.append({"role": "user", "content": student_message})
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.post(
+            "https://api.cerebras.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "llama-3.3-70b",
+                "messages": messages,
+                "max_tokens": 100,  # Shorter for speed
+                "temperature": 0.7
+            }
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data["choices"][0]["message"]["content"]
 
 
 async def call_openai(
     student_message: str,
     student_name: str,
-    conversation_history: Optional[list] = None
+    conversation_history: Optional[list] = None,
+    transcript_context: str = ""
 ) -> str:
     """Call OpenAI API for response"""
     api_key = os.getenv("OPENAI_API_KEY")
-    
-    system_prompt = f"""You are a friendly, encouraging AI tutor helping a student understand course material.
 
-LECTURE CONTEXT:
-Topic: {lecture_context.get('topic', 'General tutoring')}
-Key Points: {lecture_context.get('key_points', 'Help the student with their questions')}
-Additional Notes: {lecture_context.get('additional_notes', '')}
-
-GUIDELINES:
-- Be warm and encouraging - address the student by name ({student_name})
-- Give clear, concise explanations (2-3 sentences max for spoken responses)
-- Use simple language and analogies
-- If the student seems confused, break it down further
-- Ask follow-up questions to check understanding
-- Stay focused on the lecture topic when relevant
-- If asked something off-topic, gently redirect to the material
-
-Remember: Your response will be spoken aloud by an avatar, so keep it conversational and natural."""
+    system_prompt = build_system_prompt(student_name, transcript_context)
 
     messages = [{"role": "system", "content": system_prompt}]
-    
+
     # Add conversation history if provided
     if conversation_history:
         for msg in conversation_history[-10:]:  # Last 10 messages
@@ -99,9 +232,9 @@ Remember: Your response will be spoken aloud by an avatar, so keep it conversati
                 "role": "user" if msg.get("role") == "student" else "assistant",
                 "content": msg.get("text", "")
             })
-    
+
     messages.append({"role": "user", "content": student_message})
-    
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(
             "https://api.openai.com/v1/chat/completions",

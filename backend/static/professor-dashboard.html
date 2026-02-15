@@ -47,6 +47,34 @@
       </div>
     </div>
 
+    <!-- Live RTMS Transcripts -->
+    <div class="bg-gray-800 rounded-xl p-6 mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-semibold">📡 Live Meeting Transcripts (RTMS)</h2>
+        <button onclick="fetchTranscripts()" class="text-sm text-blue-400 hover:text-blue-300">
+          Refresh
+        </button>
+      </div>
+
+      <div class="mb-4">
+        <div class="flex gap-2 items-center">
+          <div id="rtms-dot" class="w-2 h-2 rounded-full bg-gray-500"></div>
+          <span id="rtms-status" class="text-sm text-gray-400">Checking RTMS...</span>
+        </div>
+      </div>
+
+      <div id="transcript-preview" class="bg-gray-700/50 rounded-lg p-3 max-h-32 overflow-y-auto text-sm font-mono text-gray-300">
+        <p class="text-gray-500 italic">No transcripts yet...</p>
+      </div>
+
+      <div class="mt-3 flex items-center justify-between">
+        <span class="text-xs text-gray-500">Transcripts from your Zoom meeting appear here automatically when RTMS is active.</span>
+        <button onclick="clearTranscripts()" class="text-xs text-red-400 hover:text-red-300 px-2 py-1 bg-red-900/30 rounded">
+          🗑️ Clear All
+        </button>
+      </div>
+    </div>
+
     <!-- Lecture Context -->
     <div class="bg-gray-800 rounded-xl p-6 mb-8">
       <h2 class="text-xl font-semibold mb-4">📚 Lecture Context</h2>
@@ -239,7 +267,7 @@
         const res = await fetch(`${API_BASE}/api/lecture-context`);
         const data = await res.json();
         const ctx = data.context || {};
-        
+
         document.getElementById('context-topic').value = ctx.topic || '';
         document.getElementById('context-points').value = ctx.key_points || '';
         document.getElementById('context-notes').value = ctx.additional_notes || '';
@@ -248,15 +276,85 @@
       }
     }
 
+    const RTMS_URL = 'https://rtms-webhook.onrender.com';
+
+    async function clearTranscripts() {
+      if (!confirm('Clear all meeting transcripts?')) return;
+
+      try {
+        const res = await fetch(`${RTMS_URL}/api/transcripts`, { method: 'DELETE' });
+        const data = await res.json();
+        log('Transcripts cleared: ' + data.message);
+        fetchTranscripts();
+      } catch (err) {
+        log('Failed to clear transcripts: ' + err.message);
+      }
+    }
+
+    async function fetchTranscripts() {
+      const rtmsDot = document.getElementById('rtms-dot');
+      const rtmsStatus = document.getElementById('rtms-status');
+      const preview = document.getElementById('transcript-preview');
+
+      try {
+        // First get list of meetings
+        const meetingsRes = await fetch(`${RTMS_URL}/api/transcripts`);
+        const meetingsData = await meetingsRes.json();
+
+        if (meetingsData.meetings && meetingsData.meetings.length > 0) {
+          const meeting = meetingsData.meetings[0];
+          const meetingId = meeting.meetingId;
+          const count = meeting.transcriptCount;
+
+          // Fetch transcripts for this meeting
+          const transcriptsRes = await fetch(`${RTMS_URL}/api/transcripts/${encodeURIComponent(meetingId)}`);
+          const transcriptsData = await transcriptsRes.json();
+
+          rtmsDot.className = 'w-2 h-2 rounded-full bg-green-500 animate-pulse';
+          rtmsStatus.textContent = `Active: ${count} transcript entries`;
+          rtmsStatus.className = 'text-sm text-green-400';
+
+          if (transcriptsData.transcripts && transcriptsData.transcripts.length > 0) {
+            // Show last 5 entries
+            const recent = transcriptsData.transcripts.slice(-5);
+            preview.innerHTML = recent.map(t =>
+              `<p><span class="text-blue-400">${t.speaker}:</span> ${t.text}</p>`
+            ).join('');
+          }
+
+          // Also set this as active meeting in backend
+          await fetch(`${API_BASE}/api/active-meeting`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ meeting_id: meetingId })
+          });
+
+          log(`RTMS active: ${count} transcripts from meeting ${meetingId.substring(0,8)}...`);
+        } else {
+          rtmsDot.className = 'w-2 h-2 rounded-full bg-yellow-500';
+          rtmsStatus.textContent = 'No active meetings';
+          rtmsStatus.className = 'text-sm text-yellow-400';
+          preview.innerHTML = '<p class="text-gray-500 italic">Start a Zoom meeting with RTMS to see transcripts...</p>';
+        }
+      } catch (err) {
+        rtmsDot.className = 'w-2 h-2 rounded-full bg-red-500';
+        rtmsStatus.textContent = 'RTMS unreachable';
+        rtmsStatus.className = 'text-sm text-red-400';
+        log('RTMS fetch error: ' + err.message);
+      }
+    }
+
     // Initialize
     checkHealth();
     fetchStudents();
     loadContext();
+    fetchTranscripts();
     
     // Auto-refresh every 5 seconds
     setInterval(() => {
       checkHealth();
       fetchStudents();
+      fetchTranscripts();
     }, 5000);
   </script>
 </body>

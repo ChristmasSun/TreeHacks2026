@@ -426,7 +426,8 @@ async function main() {
     const SESSION_ID = "${heygenSessionId}";
     const API_KEY = "${HEYGEN_API_KEY}";
     const RTMS_URL = "${RTMS_SERVICE_URL}";
-    const DEEPGRAM_KEY = "${DEEPGRAM_API_KEY || ''}";
+    const DEEPGRAM_KEY = "${DEEPGRAM_API_KEY}";
+    console.log('Deepgram key loaded:', DEEPGRAM_KEY ? 'Yes (' + DEEPGRAM_KEY.substring(0,8) + '...)' : 'No');
 
     const video = document.getElementById('avatar-video');
     const canvas = document.getElementById('canvas');
@@ -454,11 +455,21 @@ async function main() {
         room = new LivekitClient.Room({ adaptiveStream: true, dynacast: true });
 
         room.on(LivekitClient.RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          console.log('Track subscribed:', track.kind);
           if (track.kind === 'video') {
             status.textContent = 'Avatar connected! Click "Start Conversation"';
             track.attach(video);
             window.__avatarReady = true;
             startCanvasCapture();
+          }
+          if (track.kind === 'audio') {
+            // Create audio element and attach
+            const audioEl = document.createElement('audio');
+            audioEl.autoplay = true;
+            audioEl.id = 'avatar-audio';
+            document.body.appendChild(audioEl);
+            track.attach(audioEl);
+            console.log('Audio track attached');
           }
         });
 
@@ -472,6 +483,13 @@ async function main() {
               status.textContent = 'Avatar ready! Click "Start Conversation"';
               window.__avatarReady = true;
               startCanvasCapture();
+            }
+            if (publication.track?.kind === 'audio') {
+              const audioEl = document.createElement('audio');
+              audioEl.autoplay = true;
+              document.body.appendChild(audioEl);
+              publication.track.attach(audioEl);
+              console.log('Audio track attached (existing)');
             }
           });
         });
@@ -530,36 +548,69 @@ async function main() {
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          }
+        });
+
+        // Use Web Audio API to get raw PCM
+        const audioContext = new AudioContext({ sampleRate: 16000 });
+        const source = audioContext.createMediaStreamSource(stream);
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
         // Connect to Deepgram
-        deepgramSocket = new WebSocket(
-          'wss://api.deepgram.com/v1/listen?model=nova-2&punctuate=true&interim_results=true&endpointing=300',
-          ['token', DEEPGRAM_KEY]
-        );
+        const dgUrl = 'wss://api.deepgram.com/v1/listen?' + new URLSearchParams({
+          model: 'nova-2',
+          language: 'en',
+          punctuate: 'true',
+          interim_results: 'true',
+          encoding: 'linear16',
+          sample_rate: '16000',
+          channels: '1'
+        }).toString();
+
+        deepgramSocket = new WebSocket(dgUrl, ['token', DEEPGRAM_KEY]);
 
         deepgramSocket.onopen = () => {
+          console.log('Deepgram WebSocket connected!');
           status.textContent = 'Listening... speak now!';
           isListening = true;
           micIndicator.classList.add('listening');
           micBtn.textContent = 'Stop Conversation';
           micBtn.classList.add('active');
 
-          // Create MediaRecorder to send audio
-          mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-          mediaRecorder.ondataavailable = (e) => {
+          // Process audio and send to Deepgram
+          processor.onaudioprocess = (e) => {
             if (deepgramSocket?.readyState === WebSocket.OPEN && !isAvatarSpeaking) {
-              deepgramSocket.send(e.data);
+              const inputData = e.inputBuffer.getChannelData(0);
+              // Convert float32 to int16
+              const int16Data = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                int16Data[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+              }
+              deepgramSocket.send(int16Data.buffer);
             }
           };
-          mediaRecorder.start(100); // Send every 100ms
+
+          source.connect(processor);
+          processor.connect(audioContext.destination);
+          window.__audioContext = audioContext;
+          window.__processor = processor;
+          window.__source = source;
         };
 
         deepgramSocket.onmessage = (msg) => {
           const data = JSON.parse(msg.data);
-          const transcript = data.channel?.alternatives?.[0]?.transcript;
+          const alt = data.channel?.alternatives?.[0];
+          console.log('Deepgram transcript:', JSON.stringify(alt?.transcript), 'confidence:', alt?.confidence);
+          const transcript = alt?.transcript || '';
 
-          if (transcript) {
+          if (transcript.trim()) {
+            console.log('Transcript:', transcript, 'Final:', data.is_final);
             if (data.is_final) {
               finalText += ' ' + transcript;
               addMessage(finalText.trim(), 'user', false);
@@ -580,14 +631,16 @@ async function main() {
         };
 
         deepgramSocket.onerror = (e) => {
-          console.error('Deepgram error:', e);
-          status.textContent = 'Speech recognition error';
+          console.error('Deepgram WebSocket error:', e);
+          status.textContent = 'Speech recognition error - check console';
           stopListening();
         };
 
-        deepgramSocket.onclose = () => {
+        deepgramSocket.onclose = (e) => {
+          console.log('Deepgram closed:', e.code, e.reason);
           if (isListening) stopListening();
         };
+
 
       } catch (err) {
         status.textContent = 'Microphone error: ' + err.message;
@@ -600,8 +653,18 @@ async function main() {
       micBtn.textContent = 'Start Conversation';
       micBtn.classList.remove('active');
 
-      if (mediaRecorder?.state !== 'inactive') {
-        mediaRecorder?.stop();
+      // Clean up Web Audio
+      if (window.__processor) {
+        window.__processor.disconnect();
+        window.__processor = null;
+      }
+      if (window.__source) {
+        window.__source.disconnect();
+        window.__source = null;
+      }
+      if (window.__audioContext) {
+        window.__audioContext.close();
+        window.__audioContext = null;
       }
       if (deepgramSocket?.readyState === WebSocket.OPEN) {
         deepgramSocket.close();
@@ -709,6 +772,15 @@ async function main() {
 
     // Auto-refresh context every 10 seconds
     setInterval(refreshContext, 10000);
+
+    // Unmute audio on any click (browser autoplay policy)
+    document.addEventListener('click', () => {
+      const audioEls = document.querySelectorAll('audio');
+      audioEls.forEach(el => {
+        el.muted = false;
+        el.play().catch(() => {});
+      });
+    }, { once: true });
 
     // Initialize
     connect();

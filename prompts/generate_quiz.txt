@@ -1,0 +1,25 @@
+You are an expert educational quiz designer. Generate a multiple-choice quiz question to test understanding of a concept.
+
+CONCEPT: {concept}
+DESCRIPTION: {description}
+
+Create ONE multiple-choice question with exactly 4 options (A, B, C, D).
+
+Requirements:
+- Question should test genuine understanding, not just memorization
+- All 4 options should be plausible
+- Only ONE option should be correct
+- Include a brief explanation for why the correct answer is right
+
+Respond with ONLY valid JSON (no markdown, no code fences):
+{{
+    "question": "Your question text here?",
+    "options": [
+        "A) First option",
+        "B) Second option",
+        "C) Third option",
+        "D) Fourth option"
+    ],
+    "correct_answer": "A",
+    "explanation": "Brief explanation of why this is correct"
+}}

@@ -175,13 +175,31 @@ app.whenReady().then(() => {
   wsClient.on('message', (data) => {
     if (mainWindow) {
       mainWindow.webContents.send('backend-message', data);
-      
+
       // Auto-expand on breakout room event
       if (data.type === 'BREAKOUT_STARTED' || data.type === 'BREAKOUT_ROOM_ASSIGNED') {
         console.log('📢 Breakout room detected! Opening avatar window...');
         openAvatarWindow(registeredStudent?.name || 'Student');
       }
-      
+
+      // Handle explainer video playback for quiz
+      if (data.type === 'PLAY_EXPLAINER_VIDEO') {
+        console.log('🎬 Playing explainer video:', data.payload?.concept);
+        // Forward to avatar window if it exists
+        if (avatarWindow) {
+          avatarWindow.webContents.send('play-explainer-video', data.payload);
+        } else {
+          // Open avatar window first, then play video
+          openAvatarWindow(registeredStudent?.name || 'Student');
+          // Wait for window to load, then send message
+          setTimeout(() => {
+            if (avatarWindow) {
+              avatarWindow.webContents.send('play-explainer-video', data.payload);
+            }
+          }, 2000);
+        }
+      }
+
       // Store registered student info
       if (data.type === 'REGISTRATION_SUCCESS') {
         // Student info will be stored via IPC
