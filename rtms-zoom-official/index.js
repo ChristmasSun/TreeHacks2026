@@ -117,6 +117,9 @@ const rtmsConfig = {
 const app = express();
 const server = http.createServer(app);
 
+// Accumulated transcript for HeyGen context
+const meetingTranscripts = new Map(); // meetingId -> [{speaker, text, timestamp}]
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'public'));
 app.use(express.json());
@@ -124,6 +127,31 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/', (req, res) => {
   res.render('index', { websocket_url: config.frontendWssUrl });
+});
+
+// API endpoint to get accumulated transcripts for a meeting
+app.get('/api/transcripts/:meetingId', (req, res) => {
+  const meetingId = req.params.meetingId;
+  const transcripts = meetingTranscripts.get(meetingId) || [];
+  res.json({
+    meetingId,
+    transcripts,
+    count: transcripts.length,
+    fullContext: transcripts.map(t => `${t.speaker}: ${t.text}`).join('\n')
+  });
+});
+
+// API endpoint to get all active meetings with transcripts
+app.get('/api/transcripts', (req, res) => {
+  const meetings = [];
+  for (const [meetingId, transcripts] of meetingTranscripts) {
+    meetings.push({
+      meetingId,
+      transcriptCount: transcripts.length,
+      lastUpdate: transcripts.length > 0 ? transcripts[transcripts.length - 1].timestamp : null
+    });
+  }
+  res.json({ meetings });
 });
 
 await RTMSManager.init(rtmsConfig);
@@ -178,41 +206,46 @@ sharedServices.textToSpeech = textToSpeechBase64;
 setupFrontendWss(server);
 
 RTMSManager.on('transcript', async ({ text, userId, userName, timestamp, meetingId, streamId, productType }) => {
-  console.log('Transcript received:', text);
-  
-  try {
-    const aiResponse = await chatWithOpenRouter(text);
-    console.log('AI Response:', aiResponse);
+  console.log(`Transcript [${userName}]: ${text}`);
 
-    broadcastToFrontendClients({
-      type: 'text',
-      data: aiResponse,
-      metadata: {
-        source: 'transcript_response',
-        originalText: text,
-        userName: userName,
-        timestamp: Date.now()
-      }
-    });
-
-    if (sharedServices.textToSpeech) {
-      const base64Audio = await sharedServices.textToSpeech(aiResponse);
-      if (base64Audio) {
-        broadcastToFrontendClients({
-          type: 'audio',
-          data: base64Audio,
-          metadata: {
-            source: 'transcript_response',
-            originalText: text,
-            aiResponse: aiResponse,
-            timestamp: Date.now()
-          }
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error processing transcript:', error);
+  // Accumulate transcript
+  if (!meetingTranscripts.has(meetingId)) {
+    meetingTranscripts.set(meetingId, []);
   }
+  meetingTranscripts.get(meetingId).push({
+    speaker: userName,
+    text: text,
+    timestamp: timestamp || Date.now()
+  });
+
+  // Forward to Python backend for HeyGen context
+  const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+  try {
+    await fetch(`${backendUrl}/api/rtms/transcript`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meeting_uuid: meetingId,
+        speaker_name: userName,
+        text: text,
+        timestamp: timestamp
+      })
+    });
+    console.log(`[RTMS] Forwarded transcript to backend`);
+  } catch (error) {
+    console.error('[RTMS] Failed to forward transcript to backend:', error.message);
+  }
+
+  // Broadcast to frontend WebSocket clients
+  broadcastToFrontendClients({
+    type: 'transcript',
+    data: {
+      speaker: userName,
+      text: text,
+      timestamp: timestamp || Date.now(),
+      meetingId: meetingId
+    }
+  });
 });
 
 RTMSManager.on('meeting.rtms_started', (payload) => {
