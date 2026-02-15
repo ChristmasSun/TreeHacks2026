@@ -2,7 +2,7 @@
  * Electron main process
  * Starts as invisible overlay, expands when breakout room is detected
  */
-import { app, BrowserWindow, screen, ipcMain } from 'electron';
+import { app, BrowserWindow, screen, ipcMain, session, systemPreferences } from 'electron';
 import { join } from 'path';
 import { WebSocketClient } from './websocket-client';
 import { setupIPCHandlers } from './ipc-handlers';
@@ -149,7 +149,28 @@ function openAvatarWindow(studentName: string) {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Request macOS microphone permission (triggers system prompt)
+  if (process.platform === 'darwin') {
+    const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+    console.log('Microphone permission status:', micStatus);
+    if (micStatus !== 'granted') {
+      const granted = await systemPreferences.askForMediaAccess('microphone');
+      console.log('Microphone access:', granted ? 'granted' : 'denied');
+    }
+  }
+
+  // Grant web-level media permissions for all origins
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const allowed = ['media', 'mediaKeySystem', 'audioCapture'];
+    callback(allowed.includes(permission));
+  });
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    const allowed = ['media', 'mediaKeySystem', 'audioCapture'];
+    return allowed.includes(permission);
+  });
+
   createWindow();
 
   if (!mainWindow) {

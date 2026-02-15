@@ -10,10 +10,12 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
+import asyncio
 import json
 import logging
 import os
 from datetime import datetime
+from urllib.parse import urlencode
 
 from models import get_db, init_db
 from models.models import Professor, Student, Session, BreakoutRoom
@@ -28,6 +30,8 @@ from services.llm_service import (
 )
 from services.tts_service import text_to_speech
 from services.rtms_transcription_service import RTMSTranscriptionService
+from services.pocket_tts_service import PocketTTSService
+from services.tutor_session import TutorSession, SessionState
 from services.heygen_controller import HeyGenController
 from services.zoom_chatbot_service import (
     verify_webhook_signature,
@@ -110,6 +114,7 @@ manager = ConnectionManager()
 # Initialize services
 rtms_service = RTMSTranscriptionService()
 heygen_controller = HeyGenController()
+pocket_tts_service = PocketTTSService()
 
 
 # Transcript callback for real-time forwarding to frontend
@@ -124,10 +129,16 @@ async def forward_transcript_to_frontend(transcript_data: dict):
 # Startup event
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database on startup"""
+    """Initialize database and ML models on startup"""
     logger.info("Starting up application...")
     await init_db()
     logger.info("Database initialized")
+
+    # Pre-load Pocket TTS model for low-latency generation
+    try:
+        pocket_tts_service.load()
+    except Exception as e:
+        logger.error(f"Failed to load Pocket TTS: {e}")
 
 
 # Mount static files for audio and videos
@@ -325,6 +336,137 @@ async def get_heygen_token():
     except Exception as e:
         logger.error(f"Failed to get HeyGen token: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ Audio Pipeline WebSocket ============
+
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
+
+
+async def connect_deepgram():
+    """Connect to Deepgram nova-3 for backend-side STT."""
+    import websockets
+
+    params = urlencode({
+        "model": "nova-3",
+        "language": "en-US",
+        "smart_format": "true",
+        "interim_results": "true",
+        "punctuate": "true",
+        "encoding": "linear16",
+        "sample_rate": "16000",
+        "channels": "1",
+    })
+    url = f"wss://api.deepgram.com/v1/listen?{params}"
+    ws = await websockets.connect(
+        url, additional_headers={"Authorization": f"Token {DEEPGRAM_API_KEY}"}
+    )
+    logger.info("Connected to Deepgram nova-3")
+    return ws
+
+
+async def deepgram_reader(dg_ws, session: TutorSession):
+    """Read Deepgram transcript messages and forward to session."""
+    import sys
+    print("[Deepgram] Reader started, waiting for transcripts...", file=sys.stderr, flush=True)
+    try:
+        async for msg in dg_ws:
+            try:
+                data = json.loads(msg)
+                alt = data.get("channel", {}).get("alternatives", [{}])[0]
+                transcript = alt.get("transcript", "")
+                is_final = data.get("is_final", False)
+                if transcript:
+                    tag = "FINAL" if is_final else "interim"
+                    print(f"[Deepgram] [{tag}] {transcript}", file=sys.stderr, flush=True)
+                    await session.handle_deepgram_transcript(transcript, is_final)
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.debug(f"Deepgram parse error: {e}")
+    except Exception as e:
+        print(f"[Deepgram] Reader stopped: {e}", file=sys.stderr, flush=True)
+
+
+@app.websocket("/ws/audio")
+async def audio_websocket_endpoint(websocket: WebSocket):
+    """
+    Audio pipeline WebSocket for real-time voice interaction.
+
+    Frontend sends:
+      - Binary frames: 512 samples of int16 PCM at 16kHz (1024 bytes)
+      - JSON text: control messages (start_session, avatar_speaking, avatar_done)
+
+    Backend sends:
+      - interim_transcript: live transcription updates
+      - vad_speech_end: final transcript + LLM response + audio URL
+      - interrupt_detected: speech detected during avatar playback
+      - vad_speech_start: speech activity started
+    """
+    import sys
+    await websocket.accept()
+    print("[Audio WS] Client connected", file=sys.stderr, flush=True)
+
+    session = TutorSession(
+        websocket=websocket,
+        tts_service=pocket_tts_service,
+    )
+
+    deepgram_ws = None
+    reader_task = None
+    frame_count = 0
+
+    try:
+        # Connect to Deepgram
+        try:
+            deepgram_ws = await connect_deepgram()
+            session.deepgram_ws = deepgram_ws
+            reader_task = asyncio.create_task(deepgram_reader(deepgram_ws, session))
+            print("[Audio WS] Deepgram connected, reader task started", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[Audio WS] Deepgram connection FAILED: {e}", file=sys.stderr, flush=True)
+            await websocket.send_json({"type": "error", "message": f"Deepgram connection failed: {e}"})
+
+        while True:
+            msg = await websocket.receive()
+
+            if msg.get("bytes"):
+                frame_count += 1
+                if frame_count % 500 == 1:
+                    print(f"[Audio WS] Received {frame_count} audio frames ({len(msg['bytes'])} bytes each)", file=sys.stderr, flush=True)
+                # Binary audio frame
+                await session.handle_audio_frame(msg["bytes"])
+
+            elif msg.get("text"):
+                # JSON control message
+                try:
+                    data = json.loads(msg["text"])
+                    msg_type = data.get("type", "")
+
+                    if msg_type == "start_session":
+                        session.student_name = data.get("student_name", "Student")
+                        session.meeting_id = data.get("meeting_id")
+                        logger.info(f"Audio session started for {session.student_name}")
+
+                    elif msg_type == "avatar_speaking":
+                        session.on_avatar_speaking()
+
+                    elif msg_type == "avatar_done":
+                        session.on_avatar_done()
+
+                except json.JSONDecodeError:
+                    pass
+
+    except Exception as e:
+        logger.info(f"Audio WebSocket closed: {e}")
+    finally:
+        if reader_task:
+            reader_task.cancel()
+        if deepgram_ws:
+            try:
+                await deepgram_ws.close()
+            except Exception:
+                pass
+        await session.close()
+        logger.info("Audio WebSocket cleanup complete")
 
 
 # WebSocket endpoint

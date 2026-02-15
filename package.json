@@ -11,7 +11,8 @@
     "build:electron": "electron-builder",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx",
+    "avatar": "electron scripts/avatar.js"
   },
   "dependencies": {
     "@heygen/streaming-avatar": "^2.1.0",
@@ -29,7 +30,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
-    "electron": "^28.2.0",
+    "electron": "^40.4.1",
     "electron-builder": "^24.9.1",
     "electron-vite": "^2.0.0",
     "eslint": "^8.56.0",
