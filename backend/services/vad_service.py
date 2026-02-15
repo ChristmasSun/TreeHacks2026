@@ -49,7 +49,7 @@ class VADService:
             {'end': ...} when speech ends,
             or None if no event.
         """
-        audio = torch.frombuffer(pcm_bytes, dtype=torch.int16).float() / 32768.0
+        audio = torch.frombuffer(bytearray(pcm_bytes), dtype=torch.int16).float() / 32768.0
         iterator = self.interrupt_iterator if self.mode == "interrupt" else self.speech_iterator
         return iterator(audio)
 

@@ -6,7 +6,9 @@ Caches completed responses for instant retrieval when utterance ends.
 import asyncio
 import logging
 import os
-from dataclasses import dataclass, field
+import re
+import sys
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -15,6 +17,17 @@ logger = logging.getLogger(__name__)
 
 CEREBRAS_API_URL = "https://api.cerebras.ai/v1/chat/completions"
 CEREBRAS_MODEL = "gpt-oss-120b"
+
+
+def _is_junk_response(text: str) -> bool:
+    """Filter out useless responses like '...', single punctuation, etc."""
+    stripped = text.strip()
+    if len(stripped) < 5:
+        return True
+    # All punctuation / ellipsis
+    if re.fullmatch(r'[\.\!\?\-\–\—\…\s]+', stripped):
+        return True
+    return False
 
 
 @dataclass
@@ -77,35 +90,35 @@ class SpeculativeLLM:
                 json={
                     "model": CEREBRAS_MODEL,
                     "messages": messages,
-                    "max_tokens": 100,
+                    "max_tokens": 200,
                     "temperature": 0.7,
                 },
             )
             response.raise_for_status()
             data = response.json()
-            import sys
-            print(f"[SpecLLM] Cerebras response keys: {list(data.keys())}", file=sys.stderr, flush=True)
+
+            text = ""
             if "choices" in data and data["choices"]:
                 msg = data["choices"][0].get("message", {})
                 text = msg.get("content") or msg.get("text", "")
-                print(f"[SpecLLM] Response: {text[:80]}...", file=sys.stderr, flush=True)
-            else:
-                print(f"[SpecLLM] Unexpected response: {str(data)[:200]}", file=sys.stderr, flush=True)
-                text = ""
-            if not text:
+
+            # Filter junk responses
+            if not text or _is_junk_response(text):
+                print(f"[SpecLLM] Junk/empty response for '{transcript[:40]}': '{text}'", file=sys.stderr, flush=True)
                 return
+
+            print(f"[SpecLLM] Cached response for '{transcript[:40]}': {text[:60]}", file=sys.stderr, flush=True)
 
             async with self._lock:
                 self._cache = SpeculativeCache(
                     transcript=transcript, response=text, ready=True
                 )
-                logger.debug(f"Speculative cache updated for: {transcript[:50]}...")
 
         except asyncio.CancelledError:
             # Expected when a new interim transcript arrives
             pass
         except Exception as e:
-            logger.error(f"Speculative LLM error: {e}")
+            print(f"[SpecLLM] Error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
 
     async def get_response(self, final_transcript: str, system_prompt: str, history: list) -> str:
         """
@@ -117,7 +130,7 @@ class SpeculativeLLM:
             if self._cache.ready and self._cache.transcript.strip() == final_transcript.strip():
                 response = self._cache.response
                 self._cache = SpeculativeCache()
-                logger.info("Speculative cache HIT")
+                print(f"[SpecLLM] Cache HIT (exact match)", file=sys.stderr, flush=True)
                 return response
 
             task = self._current_task
@@ -130,14 +143,23 @@ class SpeculativeLLM:
                 pass
 
         async with self._lock:
+            # After waiting, check if cache matches OR is close enough
             if self._cache.ready:
-                response = self._cache.response
-                self._cache = SpeculativeCache()
-                logger.info("Speculative cache HIT (after wait)")
-                return response
+                cached_t = self._cache.transcript.strip()
+                final_t = final_transcript.strip()
+                # Accept cache if transcript is a substring match (Deepgram may add/trim words)
+                if cached_t == final_t or cached_t in final_t or final_t in cached_t:
+                    response = self._cache.response
+                    self._cache = SpeculativeCache()
+                    print(f"[SpecLLM] Cache HIT (fuzzy match: '{cached_t[:30]}' ~ '{final_t[:30]}')", file=sys.stderr, flush=True)
+                    return response
+                else:
+                    # Cache is stale — clear it
+                    print(f"[SpecLLM] Cache STALE: cached='{cached_t[:30]}' vs final='{final_t[:30]}'", file=sys.stderr, flush=True)
+                    self._cache = SpeculativeCache()
 
         # Cache miss — make a fresh blocking call
-        logger.info("Speculative cache MISS — making fresh call")
+        print(f"[SpecLLM] Cache MISS — fresh call for: {final_transcript[:50]}", file=sys.stderr, flush=True)
         return await self._generate_blocking(final_transcript, system_prompt, history)
 
     async def _generate_blocking(
@@ -164,15 +186,22 @@ class SpeculativeLLM:
                 json={
                     "model": CEREBRAS_MODEL,
                     "messages": messages,
-                    "max_tokens": 100,
+                    "max_tokens": 200,
                     "temperature": 0.7,
                 },
             )
             response.raise_for_status()
             data = response.json()
-            return data["choices"][0]["message"]["content"]
+            if "choices" in data and data["choices"]:
+                msg = data["choices"][0].get("message", {})
+                text = msg.get("content") or msg.get("text", "")
+                if text and not _is_junk_response(text):
+                    print(f"[SpecLLM] Blocking call OK: {text[:60]}", file=sys.stderr, flush=True)
+                    return text
+            print(f"[SpecLLM] Blocking call returned junk, raw: {str(data)[:200]}", file=sys.stderr, flush=True)
+            return "I'm sorry, I'm having trouble responding right now. Could you repeat that?"
         except Exception as e:
-            logger.error(f"Blocking LLM call failed: {e}")
+            print(f"[SpecLLM] Blocking call FAILED: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
             return "I'm sorry, I'm having trouble responding right now. Could you repeat that?"
 
     async def reset(self):

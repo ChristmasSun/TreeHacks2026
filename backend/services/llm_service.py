@@ -152,9 +152,11 @@ LECTURE CONTEXT:
 
 {transcript_section}
 RULES:
-- 2-3 sentences MAX (spoken aloud)
+- 2 sentences MAX by default (this is spoken aloud, keep it snappy)
+- If the student explicitly asks for a summary, explanation, or longer answer, give up to 4-5 sentences
 - Reference the lecture when relevant
 - Be warm and conversational
+- Never ask "what topic would you like to explore?" — just help with whatever they say
 {interrupt_note}"""
 
 
@@ -192,7 +194,7 @@ async def call_cerebras(
             json={
                 "model": "gpt-oss-120b",
                 "messages": messages,
-                "max_tokens": 100,  # Shorter for speed
+                "max_tokens": 200,
                 "temperature": 0.7
             }
         )

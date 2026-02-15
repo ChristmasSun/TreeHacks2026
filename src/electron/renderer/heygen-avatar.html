@@ -319,8 +319,31 @@
     let avatar = null;
     let sessionId = null;
     let conversationHistory = [];
-    let mediaRecorder = null;
-    let audioChunks = [];
+
+    // Track whether current speech was interrupted by user
+    let _wasInterrupted = false;
+
+    /**
+     * Speak text through HeyGen avatar using async mode.
+     * Completion is handled by AVATAR_STOP_TALKING event, not by awaiting.
+     */
+    async function avatarSpeak(text) {
+      _wasInterrupted = false;
+      // Interrupt any current speech first
+      try { await avatar.interrupt(); } catch(e) {}
+
+      console.log('🔊 avatarSpeak:', text.slice(0, 60));
+      try {
+        await avatar.speak({
+          text,
+          taskType: 'repeat',
+          taskMode: 'async',
+        });
+      } catch (e) {
+        console.error('Avatar speak error:', e);
+      }
+      // Don't wait for completion — AVATAR_STOP_TALKING event handles it
+    }
     
     const params = new URLSearchParams(window.location.search);
     const studentName = params.get('name') || 'Student';
@@ -393,22 +416,15 @@
           const greeting = 'Hello ' + studentName + '! I\'m your AI Professor. I have context from the lecture, so just ask me anything!';
           addMessage('avatar', greeting);
 
-          // Make avatar speak the greeting
-          isSpeakingResponse = true;
-          try {
-            await avatar.speak({
-              text: greeting,
-              taskType: 'talk',
-              taskMode: 'sync',
-            });
-          } catch (e) {
-            console.error('Greeting speak error:', e);
-          }
+          // Start audio pipeline immediately (don't wait for greeting to finish)
+          // The speak queue handles interruption if user talks during greeting
+          console.log('🎤 Starting audio pipeline...');
+          startAudioPipeline();
 
-          // Auto-start audio pipeline after greeting
+          // Speak greeting (will be interrupted if user speaks first)
+          isSpeakingResponse = true;
+          await avatarSpeak(greeting);
           isSpeakingResponse = false;
-          console.log('🎤 Auto-starting audio pipeline...');
-          setTimeout(startAudioPipeline, 500);
         });
         
         avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
@@ -423,13 +439,21 @@
 
         avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
           document.getElementById('speaking').classList.add('hidden');
-          console.log('🗣️ Avatar stopped talking');
+          console.log('🗣️ Avatar stopped talking (interrupted=' + _wasInterrupted + ')');
+
+          if (!_wasInterrupted && isSpeakingResponse) {
+            // Natural end of speech — tell backend
+            isSpeakingResponse = false;
+            if (audioWs?.readyState === WebSocket.OPEN) {
+              audioWs.send(JSON.stringify({ type: 'avatar_done' }));
+            }
+            updateVoiceStatus('listening');
+          }
         });
         
         const session = await avatar.createStartAvatar({
           quality: AvatarQuality.Medium,
           avatarName: 'default',
-          knowledgeBase: 'talking_photo',  // Required for instant/photo avatars
         });
         
         console.log('Session started:', session);
@@ -446,78 +470,33 @@
       const input = document.getElementById('input');
       const text = input.value.trim();
       if (!text || !avatar) return;
-      
+
       input.value = '';
       addMessage('student', text);
       conversationHistory.push({ role: 'student', text });
-      
+
       try {
+        const llmRes = await fetch(backendUrl + '/api/tutor-response', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            student_name: studentName,
+            history: conversationHistory
+          })
+        });
+
         let response;
-        
-        if (currentMode === 'voice') {
-          // Custom voice mode: LLM + TTS pipeline, then feed audio to HeyGen
-          const audioRes = await fetch(backendUrl + '/api/tutor-audio', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: text,
-              student_name: studentName,
-              history: conversationHistory,
-              tts_provider: 'openai',  // Change to 'elevenlabs' for cloned voice
-              // voice_id: 'YOUR_ELEVENLABS_VOICE_ID'  // Uncomment for custom voice
-            })
-          });
-          
-          if (audioRes.ok) {
-            const data = await audioRes.json();
-            response = data.response;
-            
-            if (data.audio_url) {
-              // HeyGen lip-syncs to our custom audio
-              const fullAudioUrl = backendUrl + data.audio_url;
-              console.log('Speaking with custom audio:', fullAudioUrl);
-              
-              await avatar.speak({
-                audio: fullAudioUrl,
-                taskType: 'talk',
-                taskMode: 'sync',
-              });
-            } else {
-              // Fallback to HeyGen TTS if audio generation failed
-              await avatar.speak({ text: response, taskType: 'talk', taskMode: 'sync' });
-            }
-          } else {
-            response = 'Sorry, I had trouble processing that. Could you try again?';
-            await avatar.speak({ text: response, taskType: 'talk', taskMode: 'sync' });
-          }
+        if (llmRes.ok) {
+          const data = await llmRes.json();
+          response = data.response;
         } else {
-          // Tutor mode: Use HeyGen's built-in TTS
-          const llmRes = await fetch(backendUrl + '/api/tutor-response', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: text,
-              student_name: studentName,
-              history: conversationHistory
-            })
-          });
-          
-          if (llmRes.ok) {
-            const data = await llmRes.json();
-            response = data.response;
-          } else {
-            response = 'That is a great question about "' + text + '". Let me help you understand this better.';
-          }
-          
-          await avatar.speak({
-            text: response,
-            taskType: 'talk',
-            taskMode: 'sync',
-          });
+          response = 'Sorry, I had trouble processing that. Could you try again?';
         }
-        
+
         addMessage('avatar', response);
         conversationHistory.push({ role: 'avatar', text: response });
+        await avatarSpeak(response);
       } catch (err) {
         console.error('Speak error:', err);
       }
@@ -646,7 +625,7 @@
               break;
 
             case 'vad_speech_end':
-              // Backend processed: VAD end → speculative LLM → Pocket TTS
+              // Backend processed: VAD end → speculative LLM response
               console.log('🗣️ Got response:', data.response);
 
               addMessage('student', data.transcript);
@@ -658,49 +637,22 @@
               updateVoiceStatus('speaking');
               isSpeakingResponse = true;
 
-              // Tell backend we're about to speak
+              // Tell backend avatar is about to speak
               if (audioWs?.readyState === WebSocket.OPEN) {
                 audioWs.send(JSON.stringify({ type: 'avatar_speaking' }));
               }
 
-              // Speak with Pocket TTS audio via HeyGen lip-sync
-              try {
-                if (data.audio_url) {
-                  const fullAudioUrl = backendUrl + data.audio_url;
-                  console.log('🔊 Avatar speaking with audio:', fullAudioUrl);
-                  await avatar.speak({
-                    audio: fullAudioUrl,
-                    taskType: 'talk',
-                    taskMode: 'sync',
-                  });
-                } else {
-                  // Fallback to text if no audio
-                  await avatar.speak({
-                    text: data.response,
-                    taskType: 'talk',
-                    taskMode: 'sync',
-                  });
-                }
-              } catch (e) {
-                console.error('Avatar speak error:', e);
-              }
-
-              // Avatar done speaking
-              isSpeakingResponse = false;
-              if (audioWs?.readyState === WebSocket.OPEN) {
-                audioWs.send(JSON.stringify({ type: 'avatar_done' }));
-              }
-              updateVoiceStatus('listening');
+              // Fire-and-forget: avatar.speak() in async mode
+              // Completion handled by AVATAR_STOP_TALKING event
+              avatarSpeak(data.response);
               break;
 
             case 'interrupt_detected':
-              // Backend VAD detected speech during avatar playback
-              console.log('⚡ Interrupt detected by backend');
-              const video = document.getElementById('avatar-video');
-              if (video) video.muted = true;
-              avatar.interrupt().catch(() => {});
-              setTimeout(() => { if (video) video.muted = false; }, 500);
+              // Backend VAD detected speech during avatar playback — stop and listen
+              console.log('⚡ Interrupt detected — stopping avatar');
+              _wasInterrupted = true;
               isSpeakingResponse = false;
+              try { await avatar.interrupt(); } catch(e) {}
               updateVoiceStatus('listening');
               break;
 
