@@ -1,0 +1,40 @@
+--- MANIM STDOUT ---
+Manim Community v0.19.2
+
+
+
+--- MANIM STDERR ---
+Animation 0: Write(Text('Supervised Learning')):   0%|          | 0/14 [00:00<?, ?it/s]                                                                                       Animation 1: Write(Text('Paired examples: input X with desired output Y')):   0%|          | 0/12 [00:00<?, ?it/s]                                                                                                                  Animation 2: Write(MathTex('X')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                       Animation 3: Create(Arrow):   0%|          | 0/9 [00:00<?, ?it/s]                                                                 Animation 4: Write(MathTex('Y')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                       Animation 6: ReplacementTransform(Text('Paired examples: input X with desired output Y')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                                                                Animation 8: ReplacementTransform(Text('Example: a self-driving car')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                                             Animation 9: FadeOut(VGroup of 3 submobjects):   0%|          | 0/6 [00:00<?, ?it/s]                                                                                    Animation 10: Create(RoundedRectangle):   0%|          | 0/8 [00:00<?, ?it/s]                                                                             Animation 11: FadeIn(Group):   0%|          | 0/9 [00:00<?, ?it/s]                                                                  Animation 12: Write(MathTex('X')):   0%|          | 0/5 [00:00<?, ?it/s]                                                                        Animation 13: Create(Arrow):   0%|          | 0/8 [00:00<?, ?it/s]                                                                  Animation 14: Create(Circle):   0%|          | 0/8 [00:00<?, ?it/s]                                                                   Animation 15: Create(VGroup of 3 submobjects):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                    Animation 16: Create(Arc), etc.:   0%|          | 0/9 [00:00<?, ?it/s]                                                                      Animation 17: Write(MathTex('Y')):   0%|          | 0/5 [00:00<?, ?it/s]                                                                        Animation 19: ReplacementTransform(Text('X: road image   →   Y: steering direction')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                                                            Animation 20: FadeOut(VGroup of 3 submobjects):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                     Animation 21: Write(MathTex('X')):   0%|          | 0/6 [00:00<?, ?it/s]                                                                        Animation 22: Create(Arrow):   0%|          | 0/6 [00:00<?, ?it/s]                                                                  Animation 23: Write(MathTex('f')):   0%|          | 0/6 [00:00<?, ?it/s]                                                                        Animation 24: Create(Arrow):   0%|          | 0/6 [00:00<?, ?it/s]                                                                  Animation 25: Write(MathTex('Y')):   0%|          | 0/6 [00:00<?, ?it/s]                                                                        Animation 27: ReplacementTransform(Text('Learn a rule that maps inputs to outputs')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                                                           ╭─────────────────────────────── Traceback (most recent call last) ────────────────────────────────╮
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/cli/render/commands.py │
+│ :125 in render                                                                                   │
+│                                                                                                  │
+│   122 │   │   │   try:                                                                           │
+│   123 │   │   │   │   with tempconfig({}):                                                       │
+│   124 │   │   │   │   │   scene = SceneClass()                                                   │
+│ ❱ 125 │   │   │   │   │   scene.render()                                                         │
+│   126 │   │   │   except Exception:                                                              │
+│   127 │   │   │   │   error_console.print_exception()                                            │
+│   128 │   │   │   │   sys.exit(1)                                                                │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/scene/scene.py:259 in  │
+│ render                                                                                           │
+│                                                                                                  │
+│    256 │   │   """                                                                               │
+│    257 │   │   self.setup()                                                                      │
+│    258 │   │   try:                                                                              │
+│ ❱  259 │   │   │   self.construct()                                                              │
+│    260 │   │   except EndSceneEarlyException:                                                    │
+│    261 │   │   │   pass                                                                          │
+│    262 │   │   except RerunSceneException:                                                       │
+│                                                                                                  │
+│ /var/folders/rp/4ptrz9g56y57x087xrzhf0yr0000gn/T/tmpd2ky9dlc.py:163 in construct                 │
+│                                                                                                  │
+│   160 │   │   fx_eq1[2].set_color(y_color)                                                       │
+│   161 │   │                                                                                      │
+│   162 │   │   # Color X inside f(X) by building separate token (avoid tex_to_color_map single-   │
+│ ❱ 163 │   │   fx_eq1_x = fx_eq1[0].get_part_by_tex("X")                                          │
+│   164 │   │   if fx_eq1_x:                                                                       │
+│   165 │   │   │   fx_eq1_x.set_color(x_color)                                                    │
+│   166                                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+TypeError: Mobject.__getattr__.<locals>.getter() takes 1 positional argument but 2 were given

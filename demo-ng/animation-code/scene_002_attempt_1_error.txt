@@ -1,0 +1,84 @@
+--- MANIM STDOUT ---
+Manim Community v0.19.2
+
+
+
+--- MANIM STDERR ---
+Animation 0: Write(Text('Supervised Learning')):   0%|          | 0/12 [00:00<?, ?it/s]                                                                                       Animation 1: Write(Text(' ')):   0%|          | 0/3 [00:00<?, ?it/s]                                                                    Animation 2: ReplacementTransform(Text(' ')):   0%|          | 0/6 [00:00<?, ?it/s]                                                                                   ╭─────────────────────────────── Traceback (most recent call last) ────────────────────────────────╮
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/cli/render/commands.py │
+│ :125 in render                                                                                   │
+│                                                                                                  │
+│   122 │   │   │   try:                                                                           │
+│   123 │   │   │   │   with tempconfig({}):                                                       │
+│   124 │   │   │   │   │   scene = SceneClass()                                                   │
+│ ❱ 125 │   │   │   │   │   scene.render()                                                         │
+│   126 │   │   │   except Exception:                                                              │
+│   127 │   │   │   │   error_console.print_exception()                                            │
+│   128 │   │   │   │   sys.exit(1)                                                                │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/scene/scene.py:259 in  │
+│ render                                                                                           │
+│                                                                                                  │
+│    256 │   │   """                                                                               │
+│    257 │   │   self.setup()                                                                      │
+│    258 │   │   try:                                                                              │
+│ ❱  259 │   │   │   self.construct()                                                              │
+│    260 │   │   except EndSceneEarlyException:                                                    │
+│    261 │   │   │   pass                                                                          │
+│    262 │   │   except RerunSceneException:                                                       │
+│                                                                                                  │
+│ /var/folders/rp/4ptrz9g56y57x087xrzhf0yr0000gn/T/tmprnzfm_oh.py:33 in construct                  │
+│                                                                                                  │
+│    30 │   │   train_label.next_to(train_box, UP, buff=0.25)                                      │
+│    31 │   │                                                                                      │
+│    32 │   │   # Simple "table" with (x, y) examples (kept inside one center group)               │
+│ ❱  33 │   │   table = MobjectTable(                                                              │
+│    34 │   │   │   [                                                                              │
+│    35 │   │   │   │   [MathTex("x", color=WHITE), MathTex("y", color=WHITE)],                    │
+│    36 │   │   │   │   [MathTex("1200", color=YELLOW), MathTex("300", color=GREEN)],              │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/mobject/table.py:1063  │
+│ in __init__                                                                                      │
+│                                                                                                  │
+│   1060 │   │   kwargs                                                                            │
+│   1061 │   │   │   Additional arguments to be passed to :class:`~.Table`.                        │
+│   1062 │   │   """                                                                               │
+│ ❱ 1063 │   │   super().__init__(table, element_to_mobject=element_to_mobject, **kwargs)          │
+│   1064                                                                                           │
+│   1065                                                                                           │
+│   1066 class IntegerTable(Table):                                                                │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/mobject/table.py:232   │
+│ in __init__                                                                                      │
+│                                                                                                  │
+│    229 │   │   │   else:                                                                         │
+│    230 │   │   │   │   raise ValueError("Not all rows in table have the same length.")           │
+│    231 │   │                                                                                     │
+│ ❱  232 │   │   super().__init__(**kwargs)                                                        │
+│    233 │   │   mob_table = self._table_to_mob_table(table)                                       │
+│    234 │   │   self.elements_without_labels = VGroup(*it.chain(*mob_table))                      │
+│    235 │   │   mob_table = self._add_labels(mob_table)                                           │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/mobject/types/vectoriz │
+│ ed_mobject.py:2143 in __init__                                                                   │
+│                                                                                                  │
+│   2140 │   def __init__(                                                                         │
+│   2141 │   │   self, *vmobjects: VMobject | Iterable[VMobject], **kwargs: Any                    │
+│   2142 │   ) -> None:                                                                            │
+│ ❱ 2143 │   │   super().__init__(**kwargs)                                                        │
+│   2144 │   │   self.add(*vmobjects)                                                              │
+│   2145 │                                                                                         │
+│   2146 │   def __repr__(self) -> str:                                                            │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/mobject/types/vectoriz │
+│ ed_mobject.py:160 in __init__                                                                    │
+│                                                                                                  │
+│    157 │   │   │   0, 1, n_points_per_cubic_curve                                                │
+│    158 │   │   )                                                                                 │
+│    159 │   │   self.cap_style: CapStyleType = cap_style                                          │
+│ ❱  160 │   │   super().__init__(**kwargs)                                                        │
+│    161 │   │   self.submobjects: list[VMobject]                                                  │
+│    162 │   │                                                                                     │
+│    163 │   │   # TODO: Find where color overwrites are happening and remove the color doubling   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+TypeError: Mobject.__init__() got an unexpected keyword argument 'element_alignment_corner'

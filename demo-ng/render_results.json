@@ -1,0 +1,167 @@
+[
+  {
+    "success": true,
+    "index": 0,
+    "concept": "Linear regression as supervised regression",
+    "description": "Show a simple mapping diagram X (input) to Y (continuous output) with a note contrasting regression vs classification.",
+    "narration": "In supervised learning, you’re given examples where the input X and the desired output Y come as a pair. Picture a self-driving car: X might be an image of the road ahead, and Y is the steering direction the car should take. The whole goal is to learn a rule that maps inputs to outputs, so when a new image shows up, the system can predict the right steering angle. When that output is a continuous number, like an angle that can smoothly vary, we call it regression. If the output instead has to be one of a few distinct categories, like stop versus go, that’s classification.",
+    "narration_duration": 31.84,
+    "path": "demo-ng/videos/scene_000_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_000_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_000_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 1,
+    "concept": "Housing price dataset and goal of fitting a line",
+    "description": "Plot a scatter of house size vs price and overlay an empty placeholder straight line to indicate the model to be fit.",
+    "narration": "Imagine you’re trying to predict the price of a house just from its size. One simple way to start is to collect a dataset of real homes and what they sold for, like these examples from Portland, Oregon. Each dot in this scatter plot is one house: the horizontal position shows its size in square feet, and the vertical position shows its price, measured in thousands of dollars. As the sizes grow, the prices tend to rise too, but not perfectly, because houses vary in lots of other ways. The empty straight line sitting on top is our model-in-waiting, a guess that price might follow a roughly linear trend with size. The goal is to slide and tilt that line until it best matches the pattern in the dots.",
+    "narration_duration": 41.92,
+    "path": "demo-ng/videos/scene_001_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_001_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_001_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 2,
+    "concept": "Training set to hypothesis workflow",
+    "description": "Draw a pipeline: Training set (table/scatter) → Learning Algorithm → Hypothesis h(x) → Predicted price for a new x.",
+    "narration": "In supervised learning, you start with a training set, a collection of examples where you already know the right answers. You feed that data into a learning algorithm, and its job is to study the patterns and produce a function that can make predictions. By convention, we call that function a hypothesis, written as h of x. Here, x might be the size of a house, and h(x) is the price the model thinks that house should sell for. Once you have h(x), you can plug in the size of a brand-new house you haven’t seen before, and get an estimated price out the other end.",
+    "narration_duration": 30.48,
+    "path": "demo-ng/videos/scene_002_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_002_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_002_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 3,
+    "concept": "Hypothesis representation: linear (affine) model",
+    "description": "Display the equation h(x)=θ0+θ1x and then extend it to multiple features h(x)=θ0+θ1x1+θ2x2 with labeled features.",
+    "narration": "When we build a learning algorithm, one of the first choices is how to represent our hypothesis, the function that turns inputs into a prediction. In linear regression, we’ll use a simple idea: predict an output as a linear function of the input. With one feature, that looks like h(x) equals theta zero plus theta one times x, where theta zero is an offset and theta one controls the slope. But real problems often give us more than one useful measurement. For house prices, you might know the size and the number of bedrooms, so we label them x one and x two. Then the hypothesis naturally extends to h(x) equals theta zero plus theta one x one plus theta two x two, with each theta weighting its feature’s influence.",
+    "narration_duration": 48.96,
+    "path": "demo-ng/videos/scene_003_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_003_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_003_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 4,
+    "concept": "Compact notation with x0=1 and summation form",
+    "description": "Transform θ0+θ1x1+θ2x2 into Σ θj xj, introducing x0=1 and showing θ and x as vectors.",
+    "narration": "One tidy way to rewrite this hypothesis is to use summation notation. Instead of writing theta zero plus theta one times x one plus theta two times x two, we write a sum: from j equals zero to two, theta j times x j. To make that work, we introduce a helpful trick: define x zero to be 1, a “dummy” feature that never changes. Then the theta zero term fits the same pattern as the others, because it’s just theta zero times x zero. With this setup, the whole expression looks like a clean dot product between two vectors, theta and x.",
+    "narration_duration": 35.12,
+    "path": "demo-ng/videos/scene_004_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_004_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_004_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 5,
+    "concept": "Core ML notation: m examples, n features, indexed training data",
+    "description": "Show a small data table with rows indexed i, label m as number of rows, n as number of features, and annotate x^(i), y^(i).",
+    "narration": "In this little table, each row represents one training example, like a single house from our dataset. We’ll call the total number of examples m, meaning m is just the number of rows you see here. For the i-th row, the input features are written as x superscript i, and the corresponding output is y superscript i. That y value is the target variable, the thing we’re trying to predict. Put together, x comma y forms one complete example, and x superscript i with y superscript i pinpoints the i-th example precisely.",
+    "narration_duration": 34.08,
+    "path": "demo-ng/videos/scene_005_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_005_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_005_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 6,
+    "concept": "Cost function: squared error objective J(θ)",
+    "description": "Write J(θ)=1/2 Σ (hθ(x^(i))−y^(i))^2 and visually connect it to vertical residuals on the scatter plot.",
+    "narration": "In linear regression, the goal is to pick the parameters, theta, that make our predictions as close as possible to the real data. We capture that idea with a cost function: J of theta equals one half times the sum, over all training examples, of h theta of x minus y, squared. On the scatter plot, each point has a vertical gap between the model’s predicted value and the true value; that gap is called the residual. Squaring the residual makes every error positive and penalizes big misses much more than small ones. When we add up all those squared vertical distances, we get J of theta, and minimizing it means finding the best-fitting line.",
+    "narration_duration": 36.96,
+    "path": "demo-ng/videos/scene_006_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_006_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_006_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 7,
+    "concept": "Gradient descent intuition on cost surface",
+    "description": "Show a 3D bowl surface J(θ0,θ1) with a point stepping downhill along the steepest descent direction.",
+    "narration": "Imagine a function J of two parameters, theta zero and theta one, forming a smooth bowl-shaped surface in 3D. The horizontal directions are those two theta axes, and the height tells you how large J is for that particular choice of parameters. Our goal is simple: find the point on this surface with the smallest height, meaning the minimum value of J. Gradient descent starts by picking an initial guess for theta zero and theta one, maybe randomly, or even just both set to zero. From that starting point, it takes a small step in the steepest downhill direction, then repeats, sliding down the surface toward the bottom.",
+    "narration_duration": 33.76,
+    "path": "demo-ng/videos/scene_007_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_007_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_007_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 8,
+    "concept": "Gradient descent update rule and learning rate α",
+    "description": "Present the update Θj := Θj − α ∂J/∂Θj, label α as learning rate, and highlight the assignment operator :=.",
+    "narration": "In gradient descent, each step updates every parameter, one by one. You’ll often see it written like this: Theta sub j colon equals Theta sub j minus alpha times the partial derivative of J with respect to Theta sub j. That colon equals symbol is important—it means assignment, as in, take the value on the right and store it back into Theta sub j on the left. Alpha is the learning rate, which controls how big a step you take each update. And you repeat this for every j, from j equals zero through j equals n, where n is the number of features.",
+    "narration_duration": 33.84,
+    "path": "demo-ng/videos/scene_008_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_008_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_008_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 9,
+    "concept": "Derivative for linear regression: (hθ(x)−y)xj",
+    "description": "Derive visually: start from 1/2(h−y)^2, apply chain rule to get (h−y) and then show ∂h/∂θj = xj, ending with (h−y)xj.",
+    "narration": "We’re taking the partial derivative, with respect to parameter theta sub j, of this cost term: one half times h of theta of x minus y, all squared. When you differentiate a square, the 2 drops down, and it neatly cancels the one half, leaving just h minus y. But h depends on theta, so we multiply by the derivative of h with respect to theta sub j, by the chain rule. In linear regression, h is theta zero x zero plus theta one x one, and so on, so changing theta sub j only affects the x sub j term. That means the derivative of h is simply x sub j, and the whole gradient becomes h minus y, times x sub j.",
+    "narration_duration": 39.76,
+    "path": "demo-ng/videos/scene_009_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_009_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_009_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 10,
+    "concept": "Batch gradient descent with full-sum gradient and convergence bowl",
+    "description": "Show contours (ellipses) of a convex quadratic bowl and an arrowed path converging to the unique minimum; annotate full-sum over m.",
+    "narration": "Picture this surface as a smooth quadratic bowl, with contour lines that form neat ellipses. Our cost function J of theta isn’t based on just one training example; it’s the full sum over all m examples. That matters for the derivative, because a key rule says the derivative of a sum is the sum of the derivatives. So when you redo the calculation correctly, the gradient becomes a big addition: from i equals 1 through m, you add up each example’s contribution. Following that summed gradient gives the arrowed path you see, stepping downhill across the ellipses until it reaches the one unique minimum at the bottom.",
+    "narration_duration": 36.24,
+    "path": "demo-ng/videos/scene_010_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_010_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_010_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 11,
+    "concept": "Learning rate effects and visualizing line fitting over iterations",
+    "description": "Animate a line on the scatter plot updating each iteration toward a best-fit line; include a small inset showing α too large overshoots vs too small slow.",
+    "narration": "Each time this line updates, it’s taking a step downhill on the error surface, trying to lower the cost, J of theta, which measures how badly the line fits the data. The size of that step is set by alpha, the learning rate. If alpha is too large, the line can jump right past the best fit and overshoot the minimum, sometimes bouncing back and forth instead of settling down. If alpha is too small, the line creeps in the right direction, but it may take a huge number of iterations to make noticeable progress. In practice, you usually test a few learning rates and pick the one that drives J down quickly and smoothly.",
+    "narration_duration": 34.08,
+    "path": "demo-ng/videos/scene_011_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_011_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_011_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 12,
+    "concept": "Stochastic gradient descent vs batch: motivation and behavior",
+    "description": "Contrast two update diagrams: Batch uses full dataset per step; SGD uses one example per step producing a noisy path toward the minimum on contour plot.",
+    "narration": "Batch gradient descent has a simple idea: to take one step, you look at every single training example, add up all their contributions to the gradient, and then update your parameters. That works nicely on small datasets, but notice what it demands when your dataset is huge. If M is a million, ten million, or even a hundred million examples, one update means scanning the entire database just to compute that one big sum. Stochastic gradient descent makes a tradeoff: it updates using just one example at a time. The path looks noisy on the contour plot, but each step is cheap, and those jittery moves still tend to drift toward the minimum.",
+    "narration_duration": 36.64,
+    "path": "demo-ng/videos/scene_012_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_012_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_012_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 13,
+    "concept": "Stopping criteria and decreasing learning rate for SGD",
+    "description": "Plot J(θ) vs iterations flattening out, and show α decreasing over time leading to smaller oscillations around a minimum region.",
+    "narration": "Watch the cost function, J of theta, as training runs. This curve measures how wrong the model is, so the goal is to push it down, step by step, with each iteration. Early on it usually drops quickly, but eventually it starts to flatten, telling you the improvements are getting smaller. One option is to stop training when the curve stops decreasing in a meaningful way. More commonly, though, you keep going and slowly lower the learning rate, alpha, which is the step size for each update. As alpha shrinks, the updates become gentler, and those little oscillations around the minimum fade into small, careful adjustments.",
+    "narration_duration": 33.76,
+    "path": "demo-ng/videos/scene_013_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_013_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_013_voiceover.wav"
+  },
+  {
+    "success": true,
+    "index": 14,
+    "concept": "Normal equation: solve linear regression in one step",
+    "description": "Show the steps: set ∇θ J(θ)=0 leading to X^T X θ = X^T y and then θ = (X^T X)^{-1} X^T y, with X as design matrix and y as vector.",
+    "narration": "To find the best parameters theta for linear regression, we take the gradient of the cost function J of theta and ask when it becomes zero. Setting that derivative to zero simplifies into a clean matrix equation: X transpose times X, multiplied by theta, minus X transpose y. When the gradient is zero, that leftover term must vanish, so we get X transpose X theta equals X transpose y. This relationship is called the normal equation, and it packages all the training examples into one solve. If X transpose X is invertible, we can multiply both sides by its inverse, giving theta equals the inverse of X transpose X times X transpose y. Here, X is the design matrix of inputs, and y is the vector of target outputs.",
+    "narration_duration": 45.2,
+    "path": "demo-ng/videos/scene_014_voiced.mp4",
+    "silent_path": "demo-ng/videos/scene_014_silent.mp4",
+    "voiceover_path": "demo-ng/videos/scene_014_voiceover.wav"
+  }
+]

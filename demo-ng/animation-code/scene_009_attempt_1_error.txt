@@ -1,0 +1,100 @@
+--- MANIM STDOUT ---
+Manim Community v0.19.2
+
+
+
+--- MANIM STDERR ---
+Animation 0: Write(Text('Partial derivative of a squared error term')):   0%|          | 0/18 [00:00<?, ?it/s]                                                                                                              Animation 1: Write(Text(' ')):   0%|          | 0/5 [00:00<?, ?it/s]                                                                    Animation 2: ReplacementTransform(Text(' ')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                   Animation 3: Write(MathTex('\\frac{\\partial}{\\partial \\theta_j}\\left[\\ \\cdot\\ \\right]')):   0%|          | 0/18 [00:00<?, ?it/s]                                                                                                                                        Animation 5: ReplacementTransform(Text('Take the partial derivative with respect to  θ_j')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                                                                  Animation 6: TransformMatchingTex(Group):   0%|          | 0/17 [00:00<?, ?it/s]                                                                                Animation 8: ReplacementTransform(Text('Cost term:  one-half times (h(θ,x) − y) squared')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                                                                 Animation 9: ReplacementTransform(MathTex('\\frac{\\partial}{\\partial \\theta_j}\\left[\\ \\frac{1}{2}\\,\\big(h(\\theta,x)-y\\big)^2\\ \\right]')):   0%|          | 0/18 [00:00<?, ?it/s]                                                                                                                                                                                            Animation 11: ReplacementTransform(Text('Differentiate the square: the 2 drops down')):   0%|          | 0/8 [00:00<?, ?it/s]                                                                                                                             Animation 12: TransformMatchingTex(Group):   0%|          | 0/17 [00:00<?, ?it/s]Animation 12: TransformMatchingTex(Group):  94%|█████████▍| 16/17 [00:00<00:00, 159.35it/s]                                                                                           Animation 14: ReplacementTransform(Text('The 2 cancels the 1/2, leaving (h − y)')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                                                         ERROR: can't open file 'demo-ng/videos/Tex/cd42dc842fd4a6e6.dvi' for reading
+╭─────────────────────────────── Traceback (most recent call last) ────────────────────────────────╮
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/cli/render/commands.py │
+│ :125 in render                                                                                   │
+│                                                                                                  │
+│   122 │   │   │   try:                                                                           │
+│   123 │   │   │   │   with tempconfig({}):                                                       │
+│   124 │   │   │   │   │   scene = SceneClass()                                                   │
+│ ❱ 125 │   │   │   │   │   scene.render()                                                         │
+│   126 │   │   │   except Exception:                                                              │
+│   127 │   │   │   │   error_console.print_exception()                                            │
+│   128 │   │   │   │   sys.exit(1)                                                                │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/scene/scene.py:259 in  │
+│ render                                                                                           │
+│                                                                                                  │
+│    256 │   │   """                                                                               │
+│    257 │   │   self.setup()                                                                      │
+│    258 │   │   try:                                                                              │
+│ ❱  259 │   │   │   self.construct()                                                              │
+│    260 │   │   except EndSceneEarlyException:                                                    │
+│    261 │   │   │   pass                                                                          │
+│    262 │   │   except RerunSceneException:                                                       │
+│                                                                                                  │
+│ /var/folders/rp/4ptrz9g56y57x087xrzhf0yr0000gn/T/tmpw1_003an.py:91 in construct                  │
+│                                                                                                  │
+│    88 │   │   self.play(ReplacementTransform(caption, caption_5), run_time=0.6)                  │
+│    89 │   │   caption = caption_5                                                                │
+│    90 │   │                                                                                      │
+│ ❱  91 │   │   center_5 = MathTex(                                                                │
+│    92 │   │   │   r"\frac{\partial}{\partial \theta_j}\left[\ \frac{1}{2}\,\big(h(\theta,x)-y\   │
+│    93 │   │   │   r"= \big(h(\theta,x)-y\big)\cdot \frac{\partial h(\theta,x)}{\partial \theta   │
+│    94 │   │   │   color=WHITE,                                                                   │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/mobject/text/tex_mobje │
+│ ct.py:298 in __init__                                                                            │
+│                                                                                                  │
+│   295 │   │   │   │   │   │   """,                                                               │
+│   296 │   │   │   │   │   ),                                                                     │
+│   297 │   │   │   │   )                                                                          │
+│ ❱ 298 │   │   │   raise compilation_error                                                        │
+│   299 │   │   self.set_color_by_tex_to_color_map(self.tex_to_color_map)                          │
+│   300 │   │                                                                                      │
+│   301 │   │   if self.organize_left_to_right:                                                    │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/mobject/text/tex_mobje │
+│ ct.py:277 in __init__                                                                            │
+│                                                                                                  │
+│   274 │   │   self.brace_notation_split_occurred = False                                         │
+│   275 │   │   self.tex_strings = self._break_up_tex_strings(tex_strings)                         │
+│   276 │   │   try:                                                                               │
+│ ❱ 277 │   │   │   super().__init__(                                                              │
+│   278 │   │   │   │   self.arg_separator.join(self.tex_strings),                                 │
+│   279 │   │   │   │   tex_environment=self.tex_environment,                                      │
+│   280 │   │   │   │   tex_template=self.tex_template,                                            │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/mobject/text/tex_mobje │
+│ ct.py:78 in __init__                                                                             │
+│                                                                                                  │
+│    75 │   │   self.tex_template: TexTemplate = tex_template                                      │
+│    76 │   │                                                                                      │
+│    77 │   │   self.tex_string = tex_string                                                       │
+│ ❱  78 │   │   file_name = tex_to_svg_file(                                                       │
+│    79 │   │   │   self._get_modified_expression(tex_string),                                     │
+│    80 │   │   │   environment=self.tex_environment,                                              │
+│    81 │   │   │   tex_template=self.tex_template,                                                │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/utils/tex_file_writing │
+│ .py:70 in tex_to_svg_file                                                                        │
+│                                                                                                  │
+│    67 │   │   tex_template.tex_compiler,                                                         │
+│    68 │   │   tex_template.output_format,                                                        │
+│    69 │   )                                                                                      │
+│ ❱  70 │   svg_file = convert_to_svg(dvi_file, tex_template.output_format)                        │
+│    71 │   if not config["no_latex_cleanup"]:                                                     │
+│    72 │   │   delete_nonsvg_files()                                                              │
+│    73 │   return svg_file                                                                        │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/utils/tex_file_writing │
+│ .py:252 in convert_to_svg                                                                        │
+│                                                                                                  │
+│   249 │                                                                                          │
+│   250 │   # if the file does not exist now, this means conversion failed                         │
+│   251 │   if not result.exists():                                                                │
+│ ❱ 252 │   │   raise ValueError(                                                                  │
+│   253 │   │   │   f"Your installation does not support converting {dvi_file.suffix} files to S   │
+│   254 │   │   │   f" Consider updating dvisvgm to at least version 2.4."                         │
+│   255 │   │   │   f" If this does not solve the problem, please refer to our troubleshooting g   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ValueError: Your installation does not support converting .dvi files to SVG. Consider updating dvisvgm 
+to at least version 2.4. If this does not solve the problem, please refer to our troubleshooting guide 
+at: 
+https://docs.manim.community/en/stable/faq/general.html#my-installation-does-not-support-converting-pdf
+-to-svg-help

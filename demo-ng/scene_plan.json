@@ -1,0 +1,77 @@
+[
+  {
+    "concept": "Linear regression as supervised regression",
+    "description": "Show a simple mapping diagram X (input) to Y (continuous output) with a note contrasting regression vs classification.",
+    "transcript_excerpt": "For the self-driving car video, that was a supervised learning problem, right? And, uh, the term supervised learning meant that you were given Xs, which was a picture of what's in front of the car, and the algorithm had to map that to an output Y, which was the steering direction. And, uh, that was a regression problem, because the output Y that you want is continuous value, right? As opposed to classification problem where Y is discrete."
+  },
+  {
+    "concept": "Housing price dataset and goal of fitting a line",
+    "description": "Plot a scatter of house size vs price and overlay an empty placeholder straight line to indicate the model to be fit.",
+    "transcript_excerpt": "So let's say you want to predict or estimate the prices of houses. So the way you build a learning algorithm is start by collecting a data set of houses and their prices. This is data from Portland, Oregon. So there's the size of a house in square feet. And that the price of a house in thousands of dollars And so there a house that is 2 square feet whose asking price was house with that size with that price and so on And maybe more conventionally, if you plot this data, there's the size, there's the price."
+  },
+  {
+    "concept": "Training set to hypothesis workflow",
+    "description": "Draw a pipeline: Training set (table/scatter) → Learning Algorithm → Hypothesis h(x) → Predicted price for a new x.",
+    "transcript_excerpt": "So in supervised learning, um, the process of supervised learning is that you have a training set, uh, such as the dataset that I drew on the left, and you feed this to learning algorithm, right? And the job of the learning algorithm is to output a function to make predictions about housing prices. And by convention, um, I'm gonna call this function that it outputs a hypothesis. And the job of the hypothesis is, you know, it will, uh, it can input the size of a new house, the size of a different house that you haven't seen yet, and will output the estimated, Price, okay?"
+  },
+  {
+    "concept": "Hypothesis representation: linear (affine) model",
+    "description": "Display the equation h(x)=θ0+θ1x and then extend it to multiple features h(x)=θ0+θ1x1+θ2x2 with labeled features.",
+    "transcript_excerpt": "So when designing a learning algorithm, the first thing we'll need to ask is, um, how how do you represent the hypothesis H right And in linear regression the purpose of this lecture we going to say that the hypothesis is going to be that right That the input size x and output a number as a, as a linear function of the size x, okay? Um, so more generally, uh, if you know the size as well as the number of bedrooms in these houses, then you may have two input features where x1 is the size, and X2 is the number of bedrooms."
+  },
+  {
+    "concept": "Compact notation with x0=1 and summation form",
+    "description": "Transform θ0+θ1x1+θ2x2 into Σ θj xj, introducing x0=1 and showing θ and x as vectors.",
+    "transcript_excerpt": "I'm also gonna introduce this other notation where, um, we to write the hypothesis as sum from j equals 0 to 2 of theta j xj so this is a summation where for conciseness we define x0 to be equal to 1 Okay? So if you define, uh, if you define x0 to be a dummy feature that always takes on the value of 1, then you can write the hypothesis h of x this way, sum from j equals 0 to 2 or just Theta j xj."
+  },
+  {
+    "concept": "Core ML notation: m examples, n features, indexed training data",
+    "description": "Show a small data table with rows indexed i, label m as number of rows, n as number of features, and annotate x^(i), y^(i).",
+    "transcript_excerpt": "I'm gonna use a standard that, uh, M will define as the number of training examples. So M is going to be the number of rows, right, in the table above, um, where, you know, each house you have in your training set is one training example. Um, and Y is the output. Right. And sometimes we call this the target variable. And so x comma y is one training example. And I'm going to use this notation, um, x superstrip i comma y superstrip i in parentheses to denote the i-th training example."
+  },
+  {
+    "concept": "Cost function: squared error objective J(θ)",
+    "description": "Write J(θ)=1/2 Σ (hθ(x^(i))−y^(i))^2 and visually connect it to vertical residuals on the scatter plot.",
+    "transcript_excerpt": "in the linear regression algorithm, also called ordinary least squares, the linear regression, um, we will want to minimize I gonna build out this equation one piece at a time okay Minimize the squared difference between what the hypothesis outputs H subscript Theta of X minus Y squared right So let's say we want to minimize the squared difference between the prediction which is H of X and Y, which is the correct price. Um, and so what we want to do is choose values of Theta that minimizes that."
+  },
+  {
+    "concept": "Gradient descent intuition on cost surface",
+    "description": "Show a 3D bowl surface J(θ0,θ1) with a point stepping downhill along the steepest descent direction.",
+    "transcript_excerpt": "Let's say you want to minimize some function j of theta, and it's important to get the axes right in this diagram, right? So in this diagram, the horizontal axes are theta 0 and theta 1, and what you want to do is find values for theta 0 and theta 1. In gradient descent, you, you know, start off at some point on this surface, and you do that by initializing Theta 0 and Theta 1 either randomly or to the value of all zeros or something, doesn't- doesn't matter too much."
+  },
+  {
+    "concept": "Gradient descent update rule and learning rate α",
+    "description": "Present the update Θj := Θj − α ∂J/∂Θj, label α as learning rate, and highlight the assignment operator :=.",
+    "transcript_excerpt": "In gradient descent, each Each step of gradient descent is implemented as follows. So bit more notation, I'm gonna use colon equals, I'm gonna use this notation to denote assignment. So what this means is we're gonna take the value on the right and assign it to Theta on the left, right? And so, uh, in each step of gradient descent, you're going to- for each value of j, so you're gonna do this for j equals 0, 1, 2, or 0, 1 up to n, where n is the number of features."
+  },
+  {
+    "concept": "Derivative for linear regression: (hθ(x)−y)xj",
+    "description": "Derive visually: start from 1/2(h−y)^2, apply chain rule to get (h−y) and then show ∂h/∂θj = xj, ending with (h−y)xj.",
+    "transcript_excerpt": "So partial derivative with respect to J of Theta that the partial derivative with respect to that of um, 1 half h of Theta of x minus y squared. Uh, and so from calculus, if you take the derivative of a square, you know, the 2 comes down and so that cancels out with the half. So this leaves you with H minus Y times partial derivative respect to Theta J of theta 0 x 0 plus theta 1 x 1 plus theta dot plus theta n x n minus y."
+  },
+  {
+    "concept": "Batch gradient descent with full-sum gradient and convergence bowl",
+    "description": "Show contours (ellipses) of a convex quadratic bowl and an arrowed path converging to the unique minimum; annotate full-sum over m.",
+    "transcript_excerpt": "the correct formula for the derivative is actually, if you take this thing and sum it over all m training examples, um, the derivative of- you know, the- the derivative of the sum is the sum of the derivatives, right? So, um, so you actually- if- if- if you redo this derivation, you know, summing with the correct definition of j of Theta, which sums of all m training examples, if you just redo that low derivation, you end up with sum equals i through m of that right"
+  },
+  {
+    "concept": "Learning rate effects and visualizing line fitting over iterations",
+    "description": "Animate a line on the scatter plot updating each iteration toward a best-fit line; include a small inset showing α too large overshoots vs too small slow.",
+    "transcript_excerpt": "If you set alpha to be very, very large, to be too large, then it can overshoot, right? The steps you take can be too large and you can run past the minimum. if you set it to be too small then you need a lot of iterations and the error will be slow. And so what happens in practice is usually you try a few values and, and, and see what value of the learning rate allows you to most efficiently you know drive down the value of J of Theta, right?"
+  },
+  {
+    "concept": "Stochastic gradient descent vs batch: motivation and behavior",
+    "description": "Contrast two update diagrams: Batch uses full dataset per step; SGD uses one example per step producing a noisy path toward the minimum on contour plot.",
+    "transcript_excerpt": "The disadvantage of batch gradient descent is that if you have a giant dataset, if you have, um, and, and in the era of big data, we're really moving to larger and larger datasets, right? And the disadvantage of batch gradient descent is that in order to make one update to your parameters, in order to take even a single step of gradient descent, you need to calculate this sum, and if M is, say, a million, or 10 million, or 100 million, you need to scan through your entire database."
+  },
+  {
+    "concept": "Stopping criteria and decreasing learning rate for SGD",
+    "description": "Plot J(θ) vs iterations flattening out, and show α decreasing over time leading to smaller oscillations around a minimum region.",
+    "transcript_excerpt": "Plot to J of Theta over time. So J of Theta is a cost function that you're trying to drive down. So monitor J of Theta as it's going down over time, and then if it looks like it stopped going down, then you can say, oh, it looks like it's stopped going down, I'm gonna stop training. The thing that actually is more common is to slowly decrease the learning rate. So just keep using Sarkozy-Brandeson, but reduce the learning rate over time."
+  },
+  {
+    "concept": "Normal equation: solve linear regression in one step",
+    "description": "Show the steps: set ∇θ J(θ)=0 leading to X^T X θ = X^T y and then θ = (X^T X)^{-1} X^T y, with X as design matrix and y as vector.",
+    "transcript_excerpt": "So finally, what we want to do is take the derivative respect to theta of j of theta and set that to zero. And so this simplifies to X transpose X Theta minus X transpose Y. And so as described earlier I gonna set this derivative to zero And so this implies that X transpose X theta equals X transpose Y. Um, so this is called the normal equations. And, uh, the optimum value for Theta is Theta equals X transpose X inverse, X transpose Y, okay?"
+  }
+]

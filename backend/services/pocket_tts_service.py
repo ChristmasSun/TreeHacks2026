@@ -30,11 +30,20 @@ class PocketTTSService:
         self._model = TTSModel.load_model()
 
         voice_path = os.getenv("VOICE_SAMPLE_PATH")
+        if not voice_path or not os.path.exists(voice_path):
+            # Default to demo-ng voice sample (cloned from lecture audio)
+            demo_voice = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "demo-ng", "voice", "voice_sample.wav",
+            )
+            if os.path.exists(demo_voice):
+                voice_path = demo_voice
+
         if voice_path and os.path.exists(voice_path):
             logger.info(f"Loading voice sample from: {voice_path}")
             self._voice_state = self._model.get_state_for_audio_prompt(voice_path)
         else:
-            logger.info("No VOICE_SAMPLE_PATH set, using default voice")
+            logger.info("No voice sample found, using default voice")
             self._voice_state = self._model.get_state_for_audio_prompt("cosette")
 
         logger.info("Pocket TTS loaded successfully")

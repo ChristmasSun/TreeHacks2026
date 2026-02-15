@@ -2,17 +2,10 @@
  * Main App - Role Selection + Student/Professor routing
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import HeyGenAvatar from './components/HeyGenAvatar';
 import ProfessorDashboard from './components/ProfessorDashboard';
 
 type Role = '' | 'professor' | 'student';
 type StudentPhase = 'connect' | 'register' | 'waiting';
-
-interface AvatarSession {
-  sessionId: string;
-  livekitUrl: string;
-  accessToken: string;
-}
 
 const App: React.FC = () => {
   const [role, setRole] = useState<Role>('');

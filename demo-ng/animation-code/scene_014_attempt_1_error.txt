@@ -1,0 +1,63 @@
+--- MANIM STDOUT ---
+Manim Community v0.19.2
+
+
+
+--- MANIM STDERR ---
+Animation 0: Write(Text('Normal Equation (Linear Regression)')):   0%|          | 0/15 [00:00<?, ?it/s]                                                                                                       Animation 1: Write(Text('To find the best parameters θ for linear regression,')):   0%|          | 0/15 [00:00<?, ?it/s]                                                                                                                        Animation 3: ReplacementTransform(Text('To find the best parameters θ for linear regression,')):   0%|          | 0/11 [00:00<?, ?it/s]                                                                                                                                       Animation 4: Write(MathTex('\\nabla_{\\theta} J(\\theta) = 0')):   0%|          | 0/21 [00:00<?, ?it/s]                                                                                                       Animation 6: ReplacementTransform(Text('Take the gradient ∇θJ(θ) and ask when it becomes 0.')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                                                                     Animation 7: FadeOut(MathTex('\\nabla_{\\theta} J(\\theta) = 0')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                                        Animation 10: ReplacementTransform(Text('Setting that derivative to 0 simplifies into a clean matrix equation.')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                                                                                        Animation 11: Write(MathTex('X^{T}X\\,\\theta - X^{T}y')):   0%|          | 0/24 [00:00<?, ?it/s]                                                                                                 Animation 13: ReplacementTransform(Text('XᵀX multiplied by θ, minus Xᵀy.')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                                                  Animation 14: Create(SurroundingRectangle):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                 Animation 15: FadeOut(SurroundingRectangle):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                  Animation 17: ReplacementTransform(Text('When the gradient is 0, that leftover term must vanish.')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                                                                          Animation 18: TransformMatchingTex(Group):   0%|          | 0/18 [00:00<?, ?it/s]                                                                                 Animation 20: ReplacementTransform(Text('So we get XᵀXθ equals Xᵀy.')):   0%|          | 0/9 [00:00<?, ?it/s]                                                                                                             Animation 21: Circumscribe(Group):   0%|          | 0/21 [00:00<?, ?it/s]                                                                         ╭─────────────────────────────── Traceback (most recent call last) ────────────────────────────────╮
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/cli/render/commands.py │
+│ :125 in render                                                                                   │
+│                                                                                                  │
+│   122 │   │   │   try:                                                                           │
+│   123 │   │   │   │   with tempconfig({}):                                                       │
+│   124 │   │   │   │   │   scene = SceneClass()                                                   │
+│ ❱ 125 │   │   │   │   │   scene.render()                                                         │
+│   126 │   │   │   except Exception:                                                              │
+│   127 │   │   │   │   error_console.print_exception()                                            │
+│   128 │   │   │   │   sys.exit(1)                                                                │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/scene/scene.py:259 in  │
+│ render                                                                                           │
+│                                                                                                  │
+│    256 │   │   """                                                                               │
+│    257 │   │   self.setup()                                                                      │
+│    258 │   │   try:                                                                              │
+│ ❱  259 │   │   │   self.construct()                                                              │
+│    260 │   │   except EndSceneEarlyException:                                                    │
+│    261 │   │   │   pass                                                                          │
+│    262 │   │   except RerunSceneException:                                                       │
+│                                                                                                  │
+│ /var/folders/rp/4ptrz9g56y57x087xrzhf0yr0000gn/T/tmpjnw6bo50.py:76 in construct                  │
+│                                                                                                  │
+│    73 │   │   caption = new_caption                                                              │
+│    74 │   │                                                                                      │
+│    75 │   │   self.play(Circumscribe(eq_normal, color=BLUE, time_width=0.8), run_time=1.4)       │
+│ ❱  76 │   │   self.wait(0.0)                                                                     │
+│    77 │   │                                                                                      │
+│    78 │   │   # [26.8s - 29.6s] packages all training examples into one solve                    │
+│    79 │   │   new_caption = Text("It packages all the training examples into one solve.", font   │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/scene/scene.py:1219 in │
+│ wait                                                                                             │
+│                                                                                                  │
+│   1216 │   │   --------                                                                          │
+│   1217 │   │   :class:`.Wait`, :meth:`.should_mobjects_update`                                   │
+│   1218 │   │   """                                                                               │
+│ ❱ 1219 │   │   duration = self.validate_run_time(duration, self.wait, "duration")                │
+│   1220 │   │   self.play(                                                                        │
+│   1221 │   │   │   Wait(                                                                         │
+│   1222 │   │   │   │   run_time=duration,                                                        │
+│                                                                                                  │
+│ /Users/theo/Coding/TreeHacks2026/.venv/lib/python3.12/site-packages/manim/scene/scene.py:1091 in │
+│ validate_run_time                                                                                │
+│                                                                                                  │
+│   1088 │   ) -> float:                                                                           │
+│   1089 │   │   method_name = f"{cls.__name__}.{method.__name__}()"                               │
+│   1090 │   │   if run_time <= 0:                                                                 │
+│ ❱ 1091 │   │   │   raise ValueError(                                                             │
+│   1092 │   │   │   │   f"{method_name} has a {parameter_name} of "                               │
+│   1093 │   │   │   │   f"{run_time:g} <= 0 seconds which Manim cannot render. "                  │
+│   1094 │   │   │   │   f"The {parameter_name} must be a positive number."                        │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+ValueError: NormalEquationScene.wait() has a duration of 0 <= 0 seconds which Manim cannot render. The 
+duration must be a positive number.
