@@ -429,3 +429,7 @@ def get_session_stats(student_jid: str) -> Optional[dict]:
         "started_at": session.started_at.isoformat() if session.started_at else None,
         "completed_at": session.completed_at.isoformat() if session.completed_at else None
     }
+
+
+# Alias for backwards compatibility
+video_finished = handle_video_completed

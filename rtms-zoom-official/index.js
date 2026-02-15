@@ -293,33 +293,27 @@ app.get('/oauth/callback', (req, res) => {
   `);
 });
 
-// Zoom Team Chat Chatbot webhook - forwards to local Python backend
+// Zoom Team Chat Chatbot webhook - broadcasts to connected WebSocket clients
 app.post('/webhook/zoom-chatbot', async (req, res) => {
-  const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+  const payload = req.body;
+  console.log('[Chatbot Webhook] Received:', JSON.stringify(payload).substring(0, 200));
 
-  console.log('[Chatbot Webhook] Received:', JSON.stringify(req.body).substring(0, 200));
+  // Broadcast the chatbot event to all connected WebSocket clients
+  // Local Python backend can listen for 'chatbot_webhook' type messages
+  broadcastToFrontendClients({
+    type: 'chatbot_webhook',
+    data: payload,
+    headers: {
+      'x-zm-signature': req.headers['x-zm-signature'] || '',
+      'x-zm-request-timestamp': req.headers['x-zm-request-timestamp'] || ''
+    },
+    timestamp: Date.now()
+  });
 
-  try {
-    // Forward the entire request to Python backend
-    const response = await fetch(`${backendUrl}/webhook/zoom-chatbot`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        // Forward Zoom signature headers for verification
-        'x-zm-signature': req.headers['x-zm-signature'] || '',
-        'x-zm-request-timestamp': req.headers['x-zm-request-timestamp'] || ''
-      },
-      body: JSON.stringify(req.body)
-    });
+  console.log('[Chatbot Webhook] Broadcasted to WebSocket clients');
 
-    const data = await response.json();
-    console.log('[Chatbot Webhook] Backend response:', JSON.stringify(data).substring(0, 200));
-    res.json(data);
-  } catch (error) {
-    console.error('[Chatbot Webhook] Error forwarding to backend:', error.message);
-    // Return success to Zoom to prevent retries, but log the error
-    res.json({ success: true, error: error.message });
-  }
+  // Return success to Zoom immediately
+  res.json({ success: true });
 });
 
 // API endpoint to get accumulated transcripts for a meeting
