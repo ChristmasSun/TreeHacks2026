@@ -21,6 +21,8 @@ from services.llm_service import (
     get_lecture_context
 )
 from services.tts_service import text_to_speech
+from services.rtms_transcription_service import RTMSTranscriptionService
+from services.heygen_controller import HeyGenController
 
 # Configure logging
 logging.basicConfig(
@@ -78,6 +80,10 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+# Initialize services
+rtms_service = RTMSTranscriptionService()
+heygen_controller = HeyGenController()
 
 
 # Transcript callback for real-time forwarding to frontend
@@ -732,10 +738,12 @@ async def handle_trigger_breakout(payload: dict, db: AsyncSession) -> dict:
 async def zoom_webhook(request_data: dict):
     """
     Handle Zoom webhook events (breakout rooms, meeting events, etc.)
-    
+
     Events we care about:
     - meeting.participant_joined_breakout_room
     - meeting.breakout_room_opened
+    - meeting.rtms_started
+    - meeting.rtms_stopped
     """
     try:
         event = request_data.get("event", "")
@@ -746,7 +754,7 @@ async def zoom_webhook(request_data: dict):
         if event == "meeting.breakout_room_opened":
             # Breakout rooms were opened by the host
             logger.info("Breakout rooms opened! Notifying students...")
-            
+
             # Trigger avatar creation and notification
             await handle_trigger_breakout({}, None)
 
@@ -754,13 +762,164 @@ async def zoom_webhook(request_data: dict):
             # A participant joined a breakout room
             participant = payload.get("object", {}).get("participant", {})
             room_name = payload.get("object", {}).get("breakout_room", {}).get("name", "")
-            
+
             logger.info(f"Participant {participant.get('user_name')} joined breakout room: {room_name}")
+
+        elif event in ["meeting.rtms_started", "webinar.rtms_started", "session.rtms_started"]:
+            # Forward to Node.js RTMS service
+            logger.info(f"RTMS started event received, forwarding to RTMS service")
+            # Note: The Node.js service will handle the actual RTMS connection
+            # This webhook acknowledgment is required by Zoom
+
+        elif event in ["meeting.rtms_stopped", "webinar.rtms_stopped", "session.rtms_stopped"]:
+            logger.info(f"RTMS stopped event received")
 
         return {"status": "received"}
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return {"status": "error", "message": str(e)}
+
+
+# ============ RTMS API Endpoints ============
+
+@app.post("/api/rtms/session-start")
+async def rtms_session_start(data: dict):
+    """
+    Handle RTMS session start notification from Node.js service
+
+    Body:
+    {
+        "meeting_uuid": str,
+        "rtms_stream_id": str,
+        "room_id": int (optional)
+    }
+    """
+    try:
+        meeting_uuid = data.get("meeting_uuid")
+        rtms_stream_id = data.get("rtms_stream_id")
+        room_id = data.get("room_id")
+
+        logger.info(f"RTMS session started for meeting {meeting_uuid}")
+
+        # Define callback for transcript updates
+        async def on_transcript(speaker_name: str, text: str, transcript_entry: dict):
+            """Forward transcript to HeyGen avatar if room_id is associated"""
+            if room_id:
+                await heygen_controller.update_avatar_context_from_transcript(
+                    room_id=room_id,
+                    speaker_name=speaker_name,
+                    transcript_text=text,
+                    respond=False  # Don't auto-respond to every utterance
+                )
+
+            # Also broadcast to frontend
+            await manager.broadcast({
+                "type": "RTMS_TRANSCRIPT",
+                "payload": {
+                    "meeting_uuid": meeting_uuid,
+                    "room_id": room_id,
+                    **transcript_entry
+                }
+            })
+
+        # Start tracking session
+        rtms_service.start_session(
+            meeting_uuid=meeting_uuid,
+            rtms_stream_id=rtms_stream_id,
+            room_id=room_id,
+            on_transcript_callback=on_transcript
+        )
+
+        return {"status": "started", "meeting_uuid": meeting_uuid}
+    except Exception as e:
+        logger.error(f"Error starting RTMS session: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/rtms/session-stop")
+async def rtms_session_stop(data: dict):
+    """
+    Handle RTMS session stop notification from Node.js service
+
+    Body:
+    {
+        "meeting_uuid": str
+    }
+    """
+    try:
+        meeting_uuid = data.get("meeting_uuid")
+        logger.info(f"RTMS session stopped for meeting {meeting_uuid}")
+
+        rtms_service.stop_session(meeting_uuid)
+
+        return {"status": "stopped", "meeting_uuid": meeting_uuid}
+    except Exception as e:
+        logger.error(f"Error stopping RTMS session: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/api/rtms/transcript")
+async def rtms_transcript(data: dict):
+    """
+    Receive transcript chunk from Node.js RTMS service
+
+    Body:
+    {
+        "meeting_uuid": str,
+        "speaker_name": str,
+        "text": str,
+        "timestamp": int,
+        "room_id": int (optional)
+    }
+    """
+    try:
+        meeting_uuid = data.get("meeting_uuid")
+        speaker_name = data.get("speaker_name")
+        text = data.get("text")
+        timestamp = data.get("timestamp")
+        room_id = data.get("room_id")
+
+        # Process transcript through service
+        await rtms_service.process_transcript_chunk(
+            meeting_uuid=meeting_uuid,
+            speaker_name=speaker_name,
+            text=text,
+            timestamp=str(timestamp) if timestamp else None
+        )
+
+        return {"status": "received"}
+    except Exception as e:
+        logger.error(f"Error processing transcript: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/rtms/session/{meeting_uuid}/stats")
+async def rtms_session_stats(meeting_uuid: str):
+    """Get RTMS session statistics"""
+    try:
+        stats = rtms_service.get_session_stats(meeting_uuid)
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting RTMS stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/rtms/session/{meeting_uuid}/transcripts")
+async def rtms_session_transcripts(meeting_uuid: str, limit: int = 10):
+    """Get recent transcripts for a session"""
+    try:
+        context = rtms_service.get_session_context(meeting_uuid, max_entries=limit)
+        recent = rtms_service.get_recent_transcripts(meeting_uuid, limit=limit)
+
+        return {
+            "meeting_uuid": meeting_uuid,
+            "context": context,
+            "transcripts": recent,
+            "count": len(recent)
+        }
+    except Exception as e:
+        logger.error(f"Error getting transcripts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # REST API endpoints (for non-real-time operations)
