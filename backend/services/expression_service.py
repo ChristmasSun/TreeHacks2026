@@ -4,9 +4,13 @@ Expression Analysis Service
 Handles video frames from RTMS (via Render WebSocket) and forwards them
 to the local expression-dashboard for facial emotion analysis.
 """
+from __future__ import annotations
+
 import os
 import base64
 import logging
+from typing import Optional
+
 import httpx
 
 from .render_ws_client import register_handler
@@ -17,7 +21,7 @@ logger = logging.getLogger(__name__)
 EXPRESSION_SERVICE_URL = os.getenv("EXPRESSION_SERVICE_URL", "http://localhost:8001")
 
 # HTTP client for forwarding frames
-_http_client: httpx.AsyncClient | None = None
+_http_client: Optional[httpx.AsyncClient] = None
 
 
 def get_http_client() -> httpx.AsyncClient:
