@@ -293,6 +293,29 @@ app.get('/oauth/callback', (req, res) => {
   `);
 });
 
+// Zoom Team Chat Chatbot webhook - broadcasts to connected WebSocket clients
+app.post('/webhook/zoom-chatbot', async (req, res) => {
+  const payload = req.body;
+  console.log('[Chatbot Webhook] Received:', JSON.stringify(payload).substring(0, 200));
+
+  // Broadcast the chatbot event to all connected WebSocket clients
+  // Local Python backend can listen for 'chatbot_webhook' type messages
+  broadcastToFrontendClients({
+    type: 'chatbot_webhook',
+    data: payload,
+    headers: {
+      'x-zm-signature': req.headers['x-zm-signature'] || '',
+      'x-zm-request-timestamp': req.headers['x-zm-request-timestamp'] || ''
+    },
+    timestamp: Date.now()
+  });
+
+  console.log('[Chatbot Webhook] Broadcasted to WebSocket clients');
+
+  // Return success to Zoom immediately
+  res.json({ success: true });
+});
+
 // API endpoint to get accumulated transcripts for a meeting
 app.get('/api/transcripts/:meetingId', (req, res) => {
   const meetingId = req.params.meetingId;

@@ -14,7 +14,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Zoom API endpoints
-ZOOM_OAUTH_URL = "https://zoom.us/zoom-oauth/token"
+ZOOM_OAUTH_URL = "https://zoom.us/oauth/token"
 ZOOM_CHATBOT_URL = "https://api.zoom.us/v2/im/chat/messages"
 
 # Cached token
@@ -186,7 +186,8 @@ def generate_url_validation_response(plain_token: str) -> dict:
 async def send_chatbot_message(
     to_jid: str,
     account_id: str,
-    content: dict
+    content: dict,
+    user_jid: Optional[str] = None
 ) -> dict:
     """
     Send a chatbot message to a user.
@@ -195,6 +196,7 @@ async def send_chatbot_message(
         to_jid: Recipient's JID (from webhook payload)
         account_id: Account ID (from webhook payload)
         content: Message content with head/body structure
+        user_jid: User's JID (required for user-managed apps)
 
     Returns:
         API response
@@ -212,6 +214,13 @@ async def send_chatbot_message(
         "content": content
     }
 
+    # Add user_jid if provided (required for user-managed apps)
+    if user_jid:
+        body["user_jid"] = user_jid
+
+    import json
+    logger.info(f"Sending chatbot message: {json.dumps(body, indent=2)}")
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.post(
             ZOOM_CHATBOT_URL,
@@ -225,6 +234,7 @@ async def send_chatbot_message(
         if not response.is_success:
             error_text = response.text
             logger.error(f"Failed to send chatbot message: {response.status_code} - {error_text}")
+            logger.error(f"Request body was: {json.dumps(body)}")
             response.raise_for_status()
 
         logger.info(f"Sent chatbot message to {to_jid}")
@@ -234,15 +244,17 @@ async def send_chatbot_message(
 async def send_text_message(
     to_jid: str,
     account_id: str,
-    text: str
+    text: str,
+    user_jid: Optional[str] = None
 ) -> dict:
     """Send a simple text message."""
     content = {
         "body": [
-            {"type": "message", "text": text[:4096]}  # Zoom limit
+            {"type": "message", "text": text[:4096].strip()}
         ]
     }
-    return await send_chatbot_message(to_jid, account_id, content)
+    logger.info(f"Sending text message to {to_jid}")
+    return await send_chatbot_message(to_jid, account_id, content, user_jid=user_jid)
 
 
 async def send_quiz_question(
@@ -250,7 +262,8 @@ async def send_quiz_question(
     account_id: str,
     question: QuizQuestion,
     question_number: int,
-    total_questions: int
+    total_questions: int,
+    user_jid: Optional[str] = None
 ) -> dict:
     """
     Send a quiz question with A/B/C/D buttons.
@@ -261,6 +274,7 @@ async def send_quiz_question(
         question: The quiz question to send
         question_number: Current question number (1-indexed)
         total_questions: Total questions in quiz
+        user_jid: User's JID for API calls
 
     Returns:
         API response
@@ -299,13 +313,14 @@ async def send_quiz_question(
         ]
     }
 
-    return await send_chatbot_message(to_jid, account_id, content)
+    return await send_chatbot_message(to_jid, account_id, content, user_jid=user_jid)
 
 
 async def send_correct_feedback(
     to_jid: str,
     account_id: str,
-    explanation: str
+    explanation: str,
+    user_jid: Optional[str] = None
 ) -> dict:
     """Send feedback for a correct answer."""
     content = {
@@ -323,7 +338,7 @@ async def send_correct_feedback(
             }
         ]
     }
-    return await send_chatbot_message(to_jid, account_id, content)
+    return await send_chatbot_message(to_jid, account_id, content, user_jid=user_jid)
 
 
 async def send_incorrect_feedback(
@@ -331,7 +346,8 @@ async def send_incorrect_feedback(
     account_id: str,
     correct_answer: str,
     explanation: str,
-    will_play_video: bool = True
+    will_play_video: bool = True,
+    user_jid: Optional[str] = None
 ) -> dict:
     """Send feedback for an incorrect answer."""
     video_note = "\n\nWatch the explainer video to learn more!" if will_play_video else ""
@@ -351,7 +367,7 @@ async def send_incorrect_feedback(
             }
         ]
     }
-    return await send_chatbot_message(to_jid, account_id, content)
+    return await send_chatbot_message(to_jid, account_id, content, user_jid=user_jid)
 
 
 async def send_quiz_complete(
@@ -359,7 +375,8 @@ async def send_quiz_complete(
     account_id: str,
     score: int,
     total: int,
-    wrong_concepts: list[str]
+    wrong_concepts: list[str],
+    user_jid: Optional[str] = None
 ) -> dict:
     """Send quiz completion summary."""
     percentage = (score / total * 100) if total > 0 else 0
@@ -400,14 +417,15 @@ async def send_quiz_complete(
         "body": body_items
     }
 
-    return await send_chatbot_message(to_jid, account_id, content)
+    return await send_chatbot_message(to_jid, account_id, content, user_jid=user_jid)
 
 
 async def send_quiz_intro(
     to_jid: str,
     account_id: str,
     topic: str,
-    num_questions: int
+    num_questions: int,
+    user_jid: Optional[str] = None
 ) -> dict:
     """Send quiz introduction message."""
     content = {
@@ -429,7 +447,7 @@ async def send_quiz_intro(
             }
         ]
     }
-    return await send_chatbot_message(to_jid, account_id, content)
+    return await send_chatbot_message(to_jid, account_id, content, user_jid=user_jid)
 
 
 def parse_answer_value(action_value: str) -> tuple[Optional[str], Optional[str]]:
