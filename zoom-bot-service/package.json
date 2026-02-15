@@ -22,7 +22,9 @@
   "author": "TreeHacks2026",
   "license": "MIT",
   "dependencies": {
+    "@types/node-fetch": "^2.6.13",
     "@zoom/meetingsdk": "^3.7.0",
+    "@zoom/rtms": "^1.0.2",
     "axios": "^1.13.5",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -31,6 +33,7 @@
     "jsonwebtoken": "^9.0.3",
     "jsrsasign": "^11.1.0",
     "livekit-client": "^2.17.1",
+    "node-fetch": "^3.3.2",
     "playwright": "^1.58.2",
     "puppeteer": "^21.7.0",
     "uuid": "^9.0.1",

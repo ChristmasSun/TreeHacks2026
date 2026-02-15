@@ -1,5 +1,20 @@
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load local .env first, then fall back to zoom-bot-service/.env for shared Zoom creds
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '..', 'zoom-bot-service', '.env') });
+
+// Map zoom-bot-service credential names if RTMS-specific ones aren't set
+if (!process.env.ZOOM_CLIENT_ID && process.env.ZOOM_API_KEY) {
+  process.env.ZOOM_CLIENT_ID = process.env.ZOOM_API_KEY;
+}
+if (!process.env.ZOOM_CLIENT_SECRET && process.env.ZOOM_API_SECRET) {
+  process.env.ZOOM_CLIENT_SECRET = process.env.ZOOM_API_SECRET;
+}
 
 const requiredVars = ['ZOOM_CLIENT_ID', 'ZOOM_CLIENT_SECRET'];
 

@@ -156,6 +156,12 @@ const rtmsConfig = {
       dataOpt: MEDIA_PARAMS.MEDIA_DATA_OPTION_AUDIO_MIXED_STREAM,
       sendRate: 100,
     },
+    video: {
+      codec: MEDIA_PARAMS.MEDIA_PAYLOAD_TYPE_H264,
+      dataOpt: MEDIA_PARAMS.MEDIA_DATA_OPTION_VIDEO_MIXED_GALLERY_VIEW,
+      resolution: MEDIA_PARAMS.MEDIA_RESOLUTION_HD,
+      fps: 1,
+    },
     transcript: {
       contentType: MEDIA_PARAMS.MEDIA_CONTENT_TYPE_TEXT,
       language: MEDIA_PARAMS.LANGUAGE_ID_ENGLISH,
@@ -440,6 +446,41 @@ RTMSManager.on('chat', async ({ text, userId, userName, timestamp, meetingId, st
       meetingId: meetingId
     }
   });
+});
+
+// ── Video frame forwarding to Emotion Service ──────────────────────────────
+const EMOTION_SERVICE_URL = process.env.EMOTION_SERVICE_URL || 'http://localhost:8001';
+const VIDEO_SEND_INTERVAL_MS = 3000;
+let lastVideoSent = 0;
+
+let videoFrameCount = 0;
+
+RTMSManager.on('video', async ({ buffer, userId, userName, timestamp, meetingId }) => {
+  videoFrameCount++;
+  if (videoFrameCount % 10 === 1) {
+    console.log(`[Video] Frame #${videoFrameCount} received (${buffer.length} bytes, meeting=${meetingId})`);
+  }
+
+  const now = Date.now();
+  if (now - lastVideoSent < VIDEO_SEND_INTERVAL_MS) return;
+  lastVideoSent = now;
+
+  console.log(`[Emotion] Forwarding frame (${buffer.length} bytes) to ${EMOTION_SERVICE_URL}`);
+  try {
+    const resp = await fetch(`${EMOTION_SERVICE_URL}/api/video-frame`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meeting_id: meetingId,
+        image_data: buffer.toString('base64'),
+        timestamp: timestamp || now
+      })
+    });
+    const data = await resp.json();
+    console.log(`[Emotion] Response: ${JSON.stringify(data)}`);
+  } catch (err) {
+    console.error('[Emotion] Forward failed:', err.message);
+  }
 });
 
 RTMSManager.on('meeting.rtms_started', (payload) => {

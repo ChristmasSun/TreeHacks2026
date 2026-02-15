@@ -1,7 +1,7 @@
 """
 Models package
 """
-from .database import Base, get_db, init_db, drop_db
+from .database import Base, get_db, init_db, drop_db, AsyncSessionLocal
 from .models import (
     Professor,
     Student,

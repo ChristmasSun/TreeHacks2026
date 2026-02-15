@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Emotion Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0f172a; color: #e2e8f0; font-family: 'Inter', system-ui, sans-serif; }
+    .bar { transition: width 0.5s ease; }
+    .pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+    .card { background: #1e293b; border: 1px solid #334155; }
+  </style>
+</head>
+<body class="min-h-screen p-6">
+  <div class="max-w-6xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <h1 class="text-2xl font-bold text-white">Class Emotion Dashboard</h1>
+      <div id="status" class="flex items-center gap-2 text-sm text-slate-400">
+        <span id="statusDot" class="w-2 h-2 rounded-full bg-red-500"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Top section: Class Overview -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <!-- Faces detected -->
+      <div class="card rounded-xl p-6 text-center">
+        <div class="text-slate-400 text-sm mb-1">Faces Detected</div>
+        <div id="totalFaces" class="text-5xl font-bold text-white">0</div>
+      </div>
+      <!-- Dominant emotion -->
+      <div class="card rounded-xl p-6 text-center">
+        <div class="text-slate-400 text-sm mb-1">Dominant Class Emotion</div>
+        <div id="dominantEmoji" class="text-5xl mb-1">😐</div>
+        <div id="dominantLabel" class="text-lg font-semibold text-white capitalize">neutral</div>
+      </div>
+      <!-- Engagement score -->
+      <div class="card rounded-xl p-6 text-center">
+        <div class="text-slate-400 text-sm mb-1">Engagement Score</div>
+        <div id="engagementScore" class="text-5xl font-bold text-white">50%</div>
+        <div class="w-full bg-slate-700 rounded-full h-2 mt-3">
+          <div id="engagementBar" class="bg-emerald-500 h-2 rounded-full bar" style="width:50%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Emotion distribution -->
+    <div class="card rounded-xl p-6 mb-8">
+      <h2 class="text-lg font-semibold text-white mb-4">Emotion Distribution</h2>
+      <div id="distribution" class="space-y-3"></div>
+    </div>
+
+    <!-- Face grid -->
+    <h2 class="text-lg font-semibold text-white mb-4">Individual Faces</h2>
+    <div id="faceGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+      <div class="card rounded-xl p-6 text-center text-slate-500">No faces detected yet</div>
+    </div>
+  </div>
+
+  <script>
+    const EMOTION_EMOJI = {
+      happy: '😊', sad: '😢', angry: '😠', surprise: '😲',
+      fear: '😨', neutral: '😐', disgust: '🤢'
+    };
+    const EMOTION_COLOR = {
+      happy: '#22c55e', sad: '#3b82f6', angry: '#ef4444', surprise: '#f59e0b',
+      fear: '#a855f7', neutral: '#94a3b8', disgust: '#84cc16'
+    };
+    const EMOTIONS = ['happy', 'sad', 'angry', 'surprise', 'fear', 'neutral', 'disgust'];
+
+    let ws = null;
+    let reconnectTimer = null;
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+      ws.onopen = () => {
+        document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-emerald-500';
+        document.getElementById('statusText').textContent = 'Connected';
+        if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+      };
+
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === 'emotion_update') render(data);
+      };
+
+      ws.onclose = () => {
+        document.getElementById('statusDot').className = 'w-2 h-2 rounded-full bg-red-500';
+        document.getElementById('statusText').textContent = 'Disconnected — reconnecting...';
+        setTimeout(connect, 3000);
+        if (!reconnectTimer) {
+          reconnectTimer = setInterval(pollFallback, 5000);
+        }
+      };
+
+      ws.onerror = () => ws.close();
+    }
+
+    async function pollFallback() {
+      try {
+        const res = await fetch('/api/emotions');
+        const data = await res.json();
+        render({ type: 'emotion_update', faces: data.faces, summary: data.summary, timestamp: Date.now() / 1000 });
+      } catch {}
+    }
+
+    function render({ faces, summary }) {
+      // Overview
+      document.getElementById('totalFaces').textContent = summary.total_faces;
+      document.getElementById('dominantEmoji').textContent = EMOTION_EMOJI[summary.dominant_class_emotion] || '😐';
+      document.getElementById('dominantLabel').textContent = summary.dominant_class_emotion;
+      document.getElementById('engagementScore').textContent = summary.engagement_score + '%';
+      const engBar = document.getElementById('engagementBar');
+      engBar.style.width = summary.engagement_score + '%';
+      engBar.className = `h-2 rounded-full bar ${summary.engagement_score > 60 ? 'bg-emerald-500' : summary.engagement_score > 30 ? 'bg-amber-500' : 'bg-red-500'}`;
+
+      // Distribution
+      const dist = summary.emotion_distribution || {};
+      const maxVal = Math.max(...Object.values(dist), 1);
+      const distEl = document.getElementById('distribution');
+      distEl.innerHTML = EMOTIONS.map(e => {
+        const val = dist[e] || 0;
+        const pct = (val / maxVal * 100).toFixed(0);
+        return `
+          <div class="flex items-center gap-3">
+            <span class="w-20 text-sm text-slate-400 capitalize">${EMOTION_EMOJI[e]} ${e}</span>
+            <div class="flex-1 bg-slate-700 rounded-full h-4">
+              <div class="h-4 rounded-full bar" style="width:${pct}%;background:${EMOTION_COLOR[e]}"></div>
+            </div>
+            <span class="w-14 text-right text-sm text-slate-300">${val.toFixed(1)}%</span>
+          </div>`;
+      }).join('');
+
+      // Face cards
+      const grid = document.getElementById('faceGrid');
+      if (!faces || faces.length === 0) {
+        grid.innerHTML = '<div class="card rounded-xl p-6 text-center text-slate-500 col-span-full">No faces detected yet</div>';
+        return;
+      }
+      grid.innerHTML = faces.map(f => {
+        const emoji = EMOTION_EMOJI[f.current_emotion] || '😐';
+        const scores = f.emotion_scores || {};
+        const maxScore = Math.max(...Object.values(scores), 1);
+        const bars = EMOTIONS.map(e => {
+          const s = scores[e] || 0;
+          return `<div class="flex items-center gap-1">
+            <span class="w-4 text-xs">${EMOTION_EMOJI[e]}</span>
+            <div class="flex-1 bg-slate-700 rounded h-1.5">
+              <div class="h-1.5 rounded bar" style="width:${(s/maxScore*100).toFixed(0)}%;background:${EMOTION_COLOR[e]}"></div>
+            </div>
+          </div>`;
+        }).join('');
+        const ago = f.last_seen ? Math.round(Date.now()/1000 - f.last_seen) + 's ago' : '';
+        return `
+          <div class="card rounded-xl p-4 text-center">
+            <div class="text-3xl mb-1">${emoji}</div>
+            <div class="font-semibold text-white text-sm">${f.face_id}</div>
+            <div class="text-xs capitalize mb-2" style="color:${EMOTION_COLOR[f.current_emotion]}">${f.current_emotion}</div>
+            <div class="space-y-1">${bars}</div>
+            <div class="text-xs text-slate-500 mt-2">${ago}</div>
+          </div>`;
+      }).join('');
+    }
+
+    connect();
+  </script>
+</body>
+</html>
