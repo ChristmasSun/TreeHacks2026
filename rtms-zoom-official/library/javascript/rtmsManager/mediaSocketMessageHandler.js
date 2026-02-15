@@ -142,9 +142,11 @@ export function handleMediaMessage(data, {
         break;
 
       case 18: // CHAT
+        console.log('[DEBUG CHAT] Raw chat message received:', JSON.stringify(msg.content));
         if (msg.content?.data) {
           const { user_id, user_name, data: chatData, timestamp } = msg.content;
-          
+          console.log(`[DEBUG CHAT] Parsed: user=${user_name}, text=${chatData}`);
+
           processChat({
             text: chatData,
             userId: user_id,
@@ -154,6 +156,8 @@ export function handleMediaMessage(data, {
             streamId,
             productType: conn.rtmsType
           }, emit);
+        } else {
+          console.log('[DEBUG CHAT] msg.content.data is missing');
         }
         break;
 

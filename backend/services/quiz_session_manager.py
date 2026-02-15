@@ -44,6 +44,7 @@ class QuizSession:
     student_jid: str
     account_id: str
     quiz: Quiz
+    user_jid: str = ""  # User's JID for API calls
     current_question_idx: int = 0
     answers: list[StudentAnswer] = field(default_factory=list)
     wrong_concepts: list[str] = field(default_factory=list)
@@ -68,6 +69,7 @@ def create_session(
     student_jid: str,
     account_id: str,
     quiz: Quiz,
+    user_jid: str = "",
     on_play_video: Optional[Callable[[str, str, str], Awaitable[None]]] = None
 ) -> QuizSession:
     """Create a new quiz session for a student."""
@@ -75,6 +77,7 @@ def create_session(
         student_jid=student_jid,
         account_id=account_id,
         quiz=quiz,
+        user_jid=user_jid,
         on_play_video=on_play_video
     )
     quiz_sessions[student_jid] = session
@@ -126,7 +129,8 @@ async def send_current_question(session: QuizSession):
         account_id=session.account_id,
         question=question,
         question_number=session.current_question_idx + 1,
-        total_questions=len(session.quiz.questions)
+        total_questions=len(session.quiz.questions),
+        user_jid=session.user_jid
     )
 
     logger.info(
@@ -194,7 +198,8 @@ async def handle_answer(
         await send_correct_feedback(
             to_jid=session.student_jid,
             account_id=session.account_id,
-            explanation=question.explanation
+            explanation=question.explanation,
+            user_jid=session.user_jid
         )
 
         session.current_question_idx += 1
@@ -217,7 +222,8 @@ async def handle_answer(
             account_id=session.account_id,
             correct_answer=question.correct_answer,
             explanation=question.explanation,
-            will_play_video=will_play_video
+            will_play_video=will_play_video,
+            user_jid=session.user_jid
         )
 
         if will_play_video:
@@ -286,7 +292,8 @@ async def handle_video_completed(student_jid: str) -> dict:
         await send_text_message(
             to_jid=session.student_jid,
             account_id=session.account_id,
-            text="Great, you watched the video! Let me check if you got it now..."
+            text="Great, you watched the video! Let me check if you got it now...",
+            user_jid=session.user_jid
         )
 
         follow_up = await generate_follow_up_question(
@@ -305,7 +312,8 @@ async def handle_video_completed(student_jid: str) -> dict:
             account_id=session.account_id,
             question=follow_up,
             question_number=session.current_question_idx + 1,
-            total_questions=len(session.quiz.questions)
+            total_questions=len(session.quiz.questions),
+            user_jid=session.user_jid
         )
 
         return {"next_action": "follow_up_question"}
@@ -345,7 +353,8 @@ async def handle_follow_up_answer(session: QuizSession, answer: str) -> dict:
         await send_correct_feedback(
             to_jid=session.student_jid,
             account_id=session.account_id,
-            explanation="You got it now! Let's continue."
+            explanation="You got it now! Let's continue.",
+            user_jid=session.user_jid
         )
     else:
         await send_incorrect_feedback(
@@ -353,7 +362,8 @@ async def handle_follow_up_answer(session: QuizSession, answer: str) -> dict:
             account_id=session.account_id,
             correct_answer=follow_up.correct_answer,
             explanation=follow_up.explanation,
-            will_play_video=False
+            will_play_video=False,
+            user_jid=session.user_jid
         )
 
     # Clear follow-up and continue to next question
@@ -385,7 +395,8 @@ async def complete_quiz(session: QuizSession):
         account_id=session.account_id,
         score=correct_count,
         total=total,
-        wrong_concepts=list(set(session.wrong_concepts))  # Unique concepts
+        wrong_concepts=list(set(session.wrong_concepts)),  # Unique concepts
+        user_jid=session.user_jid
     )
 
     logger.info(
@@ -403,7 +414,8 @@ async def cancel_quiz(student_jid: str) -> bool:
     await send_text_message(
         to_jid=session.student_jid,
         account_id=session.account_id,
-        text="Quiz cancelled. Type /quiz to start a new one!"
+        text="Quiz cancelled. Type /quiz to start a new one!",
+        user_jid=session.user_jid
     )
 
     delete_session(student_jid)
@@ -429,3 +441,7 @@ def get_session_stats(student_jid: str) -> Optional[dict]:
         "started_at": session.started_at.isoformat() if session.started_at else None,
         "completed_at": session.completed_at.isoformat() if session.completed_at else None
     }
+
+
+# Alias for backwards compatibility
+video_finished = handle_video_completed

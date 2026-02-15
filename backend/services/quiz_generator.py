@@ -337,3 +337,60 @@ Respond with ONLY valid JSON (no markdown, no code fences):
         explanation=data["explanation"],
         video_path=video_path
     )
+
+
+def load_quiz_from_json(json_path: str) -> Quiz:
+    """
+    Load a quiz from a JSON file (e.g., quiz_questions.json).
+
+    Args:
+        json_path: Path to the quiz JSON file
+
+    Returns:
+        A Quiz object
+    """
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+
+    # Determine if this is a list of questions or a full quiz structure
+    if isinstance(data, list):
+        # List of question dicts
+        questions = []
+        for idx, q in enumerate(data):
+            questions.append(QuizQuestion(
+                id=q.get("id", f"q{idx}"),
+                concept=q.get("concept", "Unknown"),
+                question_text=q.get("question", ""),
+                options=q.get("options", []),
+                correct_answer=q.get("correct_answer", "A").upper(),
+                explanation=q.get("explanation", ""),
+                video_path=q.get("video_path")
+            ))
+
+        # Extract topic from directory name or filename
+        topic = Path(json_path).parent.name.replace("-", " ").replace("_", " ").title()
+
+        return Quiz(
+            id=str(uuid.uuid4())[:8],
+            topic=topic,
+            questions=questions
+        )
+    else:
+        # Full quiz structure with id, topic, questions
+        questions = []
+        for idx, q in enumerate(data.get("questions", [])):
+            questions.append(QuizQuestion(
+                id=q.get("id", f"q{idx}"),
+                concept=q.get("concept", "Unknown"),
+                question_text=q.get("question", ""),
+                options=q.get("options", []),
+                correct_answer=q.get("correct_answer", "A").upper(),
+                explanation=q.get("explanation", ""),
+                video_path=q.get("video_path")
+            ))
+
+        return Quiz(
+            id=data.get("id", str(uuid.uuid4())[:8]),
+            topic=data.get("topic", "Quiz"),
+            questions=questions
+        )

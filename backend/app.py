@@ -1279,6 +1279,341 @@ async def quiz_video_completed(data: dict):
     return result
 
 
+# ============ Auto-DM Quiz to Meeting Participants ============
+
+@app.post("/api/quiz/dm-participant")
+async def dm_participant_quiz(data: dict):
+    """
+    DM a meeting participant with quiz intro via Team Chat chatbot.
+    Called from RTMS service when participant speaks.
+    """
+    from services.zoom_chatbot_service import send_quiz_intro, get_user_jid
+
+    meeting_id = data.get("meeting_id")
+    user_id = data.get("user_id")
+    user_name = data.get("user_name", "Student")
+    user_email = data.get("user_email")
+
+    if not user_email:
+        logger.warning(f"No email for user {user_name}, cannot DM")
+        return {"success": False, "error": "No email"}
+
+    logger.info(f"DM quiz to {user_name} ({user_email}) from meeting {meeting_id}")
+
+    try:
+        # Get user's JID from their email
+        jid = await get_user_jid(user_email)
+        if not jid:
+            logger.warning(f"Could not get JID for {user_email}")
+            return {"success": False, "error": "Could not get JID"}
+
+        # Get account_id from env (same account)
+        account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")
+
+        # Load concepts and generate quiz
+        mapping = load_concept_video_mapping(quiz_video_output_dir)
+        if not mapping:
+            # Send simple welcome message if no quiz content
+            from services.zoom_chatbot_service import send_text_message
+            await send_text_message(
+                to_jid=jid,
+                account_id=account_id,
+                text=f"Hi {user_name}! Welcome to the lecture. Quiz content will be available soon."
+            )
+            return {"success": True, "message": "Welcome sent (no quiz content)"}
+
+        # Generate quiz
+        concepts = [
+            {"concept": name, "description": info["description"], "video_path": info.get("video_path")}
+            for name, info in mapping.items()
+        ]
+
+        quiz = await generate_quiz_from_concepts(
+            concepts=concepts,
+            num_questions=min(3, len(concepts)),
+            topic="Lecture Quiz"
+        )
+
+        # Create session
+        create_quiz_session(
+            student_jid=jid,
+            account_id=account_id,
+            quiz=quiz,
+            on_play_video=trigger_video_playback
+        )
+
+        # Send quiz intro
+        await send_quiz_intro(
+            to_jid=jid,
+            account_id=account_id,
+            topic=quiz.topic,
+            num_questions=len(quiz.questions)
+        )
+
+        logger.info(f"Quiz DM sent to {user_name} ({jid})")
+        return {"success": True}
+
+    except Exception as e:
+        logger.error(f"Error DMing participant: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/quiz/dm-by-name")
+async def dm_quiz_by_name(data: dict):
+    """
+    DM a quiz to a user by their display name.
+    Fallback when we don't have their user_id.
+    """
+    from services.zoom_chatbot_service import send_text_message, get_chatbot_token
+    import httpx
+
+    meeting_id = data.get("meeting_id")
+    user_name = data.get("user_name")
+
+    logger.info(f"DM quiz by name: {user_name} from meeting {meeting_id}")
+
+    # Try to find user by searching (this is a best-effort approach)
+    try:
+        token = await get_chatbot_token()
+        account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")
+
+        # Search for user by name using Zoom API
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"https://api.zoom.us/v2/users",
+                headers={"Authorization": f"Bearer {token}"},
+                params={"status": "active", "page_size": 100}
+            )
+
+            if response.status_code == 200:
+                users = response.json().get("users", [])
+                for user in users:
+                    # Match by display name (case-insensitive partial match)
+                    if user_name.lower() in user.get("display_name", "").lower() or \
+                       user_name.lower() in f"{user.get('first_name', '')} {user.get('last_name', '')}".lower():
+                        # Found a match
+                        user_email = user.get("email")
+                        if user_email:
+                            # Call the dm-participant endpoint
+                            return await dm_participant_quiz({
+                                "meeting_id": meeting_id,
+                                "user_id": user.get("id"),
+                                "user_name": user_name,
+                                "user_email": user_email
+                            })
+
+        return {"success": False, "error": f"Could not find user: {user_name}"}
+
+    except Exception as e:
+        logger.error(f"Error in dm-by-name: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/quiz/trigger-all")
+async def trigger_quiz_all():
+    """
+    Trigger quiz to all participants in the active meeting.
+    Called from professor dashboard.
+    """
+    import httpx
+
+    logger.info("Triggering quiz to all meeting participants")
+
+    # Get active meeting transcripts from RTMS service
+    rtms_url = os.getenv("RTMS_SERVICE_URL", "https://rtms-webhook.onrender.com")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Get list of active meetings
+            meetings_res = await client.get(f"{rtms_url}/api/transcripts")
+            meetings_data = meetings_res.json()
+
+            if not meetings_data.get("meetings"):
+                return {"success": False, "error": "No active meetings found"}
+
+            meeting = meetings_data["meetings"][0]
+            meeting_id = meeting["meetingId"]
+
+            # Get transcripts to find participants
+            transcripts_res = await client.get(f"{rtms_url}/api/transcripts/{meeting_id}")
+            transcripts_data = transcripts_res.json()
+
+            # Extract unique speakers
+            speakers = {}
+            for t in transcripts_data.get("transcripts", []):
+                speaker = t.get("speaker")
+                if speaker and speaker not in speakers:
+                    speakers[speaker] = True
+
+            if not speakers:
+                return {"success": False, "error": "No participants found in meeting"}
+
+            # Send quiz to each speaker via the RTMS service (which will DM them)
+            sent_count = 0
+            for speaker_name in speakers.keys():
+                try:
+                    # Trigger DM via RTMS service
+                    await client.post(
+                        f"{rtms_url}/api/trigger-quiz-dm",
+                        json={
+                            "meeting_id": meeting_id,
+                            "user_name": speaker_name
+                        }
+                    )
+                    sent_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to DM {speaker_name}: {e}")
+
+            return {
+                "success": True,
+                "message": f"Triggered quiz for {sent_count} participants in meeting"
+            }
+
+    except Exception as e:
+        logger.error(f"Error triggering quiz to all: {e}")
+        return {"success": False, "error": str(e)}
+
+
+# ============ Meeting Chat Quiz Endpoints ============
+
+# Store active meeting quizzes: meeting_id -> {current_question, questions, scores}
+meeting_quizzes: dict = {}
+
+
+@app.post("/api/quiz/start-meeting-quiz")
+async def start_meeting_quiz(data: dict):
+    """
+    Start a quiz in a meeting chat.
+    Called from RTMS service when someone types /quiz.
+    """
+    meeting_id = data.get("meeting_id")
+    user_name = data.get("user_name", "Student")
+
+    if not meeting_id:
+        raise HTTPException(status_code=400, detail="Missing meeting_id")
+
+    logger.info(f"Starting meeting quiz for {meeting_id} requested by {user_name}")
+
+    try:
+        # Load concepts from video output directory
+        mapping = load_concept_video_mapping(quiz_video_output_dir)
+
+        if not mapping:
+            return {
+                "question": "No lecture content available yet. Ask your professor to set up quiz content."
+            }
+
+        # Convert to concepts list
+        concepts = [
+            {
+                "concept": name,
+                "description": info["description"],
+                "video_path": info.get("video_path")
+            }
+            for name, info in mapping.items()
+        ]
+
+        # Generate quiz
+        quiz = await generate_quiz_from_concepts(
+            concepts=concepts,
+            num_questions=min(3, len(concepts)),  # Fewer questions for meeting chat
+            topic="Lecture Quiz"
+        )
+
+        # Store quiz state for this meeting
+        meeting_quizzes[meeting_id] = {
+            "quiz": quiz,
+            "current_idx": 0,
+            "scores": {},  # user_id -> score
+            "answered": set()  # users who answered current question
+        }
+
+        # Format first question
+        q = quiz.questions[0]
+        question_text = f"📝 Question 1/{len(quiz.questions)}: {q.question_text}\n\n"
+        for opt in q.options:
+            question_text += f"{opt}\n"
+        question_text += "\n(Reply with A, B, C, or D)"
+
+        return {"question": question_text}
+
+    except Exception as e:
+        logger.error(f"Error starting meeting quiz: {e}")
+        return {"question": f"Sorry, couldn't generate quiz: {str(e)}"}
+
+
+@app.post("/api/quiz/meeting-answer")
+async def handle_meeting_answer(data: dict):
+    """
+    Handle a quiz answer from meeting chat.
+    """
+    meeting_id = data.get("meeting_id")
+    user_name = data.get("user_name", "Student")
+    user_id = data.get("user_id", user_name)
+    answer = data.get("answer", "").upper()
+
+    if not meeting_id or meeting_id not in meeting_quizzes:
+        return {"message": "No active quiz. Type /quiz to start one!"}
+
+    quiz_state = meeting_quizzes[meeting_id]
+    quiz = quiz_state["quiz"]
+    current_idx = quiz_state["current_idx"]
+
+    if current_idx >= len(quiz.questions):
+        return {"message": "Quiz already completed!"}
+
+    # Check if user already answered
+    answer_key = f"{user_id}_{current_idx}"
+    if answer_key in quiz_state["answered"]:
+        return {"message": f"{user_name}, you already answered this question!"}
+
+    quiz_state["answered"].add(answer_key)
+
+    question = quiz.questions[current_idx]
+    is_correct = answer == question.correct_answer.upper()
+
+    # Track score
+    if user_id not in quiz_state["scores"]:
+        quiz_state["scores"][user_id] = {"name": user_name, "correct": 0, "total": 0}
+    quiz_state["scores"][user_id]["total"] += 1
+    if is_correct:
+        quiz_state["scores"][user_id]["correct"] += 1
+
+    # Build response
+    if is_correct:
+        response = f"✅ {user_name} got it right! {question.explanation}"
+    else:
+        response = f"❌ {user_name}, the correct answer was {question.correct_answer}. {question.explanation}"
+
+    # Move to next question after a few answers or timeout
+    # For simplicity, move after each answer for now
+    quiz_state["current_idx"] += 1
+    quiz_state["answered"] = set()
+
+    if quiz_state["current_idx"] < len(quiz.questions):
+        # Send next question
+        next_q = quiz.questions[quiz_state["current_idx"]]
+        response += f"\n\n📝 Question {quiz_state['current_idx'] + 1}/{len(quiz.questions)}: {next_q.question_text}\n\n"
+        for opt in next_q.options:
+            response += f"{opt}\n"
+        response += "\n(Reply with A, B, C, or D)"
+    else:
+        # Quiz complete - show scores
+        response += "\n\n🎉 Quiz Complete! Scores:\n"
+        sorted_scores = sorted(
+            quiz_state["scores"].values(),
+            key=lambda x: x["correct"],
+            reverse=True
+        )
+        for i, score in enumerate(sorted_scores[:5]):
+            response += f"{i+1}. {score['name']}: {score['correct']}/{score['total']}\n"
+
+        # Clean up
+        del meeting_quizzes[meeting_id]
+
+    return {"message": response}
+
+
 @app.get("/api/quiz/session/{student_jid}")
 async def get_quiz_session_api(student_jid: str):
     """Get quiz session stats for a student."""

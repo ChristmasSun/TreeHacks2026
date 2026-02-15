@@ -15,8 +15,19 @@ import { chatWithOpenRouter } from './chatWithOpenrouter.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Track participants we've already DM'd (to avoid spamming)
+const dmSentToParticipants = new Map(); // meetingId -> Set of userIds
+
 // S2S OAuth - Get access token to call Zoom APIs
+let cachedToken = null;
+let tokenExpiry = 0;
+
 async function getS2SAccessToken() {
+  // Return cached token if still valid
+  if (cachedToken && Date.now() < tokenExpiry) {
+    return cachedToken;
+  }
+
   const credentials = Buffer.from(`${config.s2sClientId}:${config.s2sClientSecret}`).toString('base64');
   const response = await fetch(`https://zoom.us/oauth/token?grant_type=account_credentials&account_id=${config.accountId}`, {
     method: 'POST',
@@ -30,7 +41,117 @@ async function getS2SAccessToken() {
     console.error('[S2S] Failed to get token:', data);
     return null;
   }
-  return data.access_token;
+
+  cachedToken = data.access_token;
+  tokenExpiry = Date.now() + (data.expires_in - 60) * 1000; // Refresh 1 min early
+  return cachedToken;
+}
+
+// Send chat message to a live meeting
+async function sendMeetingChatMessage(meetingId, message) {
+  try {
+    const token = await getS2SAccessToken();
+    if (!token) {
+      console.error('[Chat] No token available');
+      return false;
+    }
+
+    // meetingId might be a UUID with special chars, need to encode
+    const encodedMeetingId = encodeURIComponent(encodeURIComponent(meetingId));
+
+    const response = await fetch(`https://api.zoom.us/v2/live_meetings/${encodedMeetingId}/chat/messages`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        message: message,
+        to_channel: 'everyone' // Send to everyone in meeting
+      })
+    });
+
+    if (response.ok) {
+      console.log(`[Chat] Sent message to meeting ${meetingId}`);
+      return true;
+    } else {
+      const errorText = await response.text();
+      console.error(`[Chat] Failed to send message: ${response.status} ${errorText}`);
+      return false;
+    }
+  } catch (error) {
+    console.error('[Chat] Error sending message:', error);
+    return false;
+  }
+}
+
+// Get user email from Zoom API
+async function getUserEmail(userId) {
+  try {
+    const token = await getS2SAccessToken();
+    if (!token) return null;
+
+    const response = await fetch(`https://api.zoom.us/v2/users/${userId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.email;
+    }
+    return null;
+  } catch (error) {
+    console.error('[User] Error getting user email:', error);
+    return null;
+  }
+}
+
+// DM a participant via the chatbot (through Python backend)
+async function dmParticipantQuiz(meetingId, userId, userName) {
+  // Check if we already DM'd this user in this meeting
+  if (!dmSentToParticipants.has(meetingId)) {
+    dmSentToParticipants.set(meetingId, new Set());
+  }
+  if (dmSentToParticipants.get(meetingId).has(userId)) {
+    console.log(`[Quiz DM] Already sent to ${userName} (${userId})`);
+    return;
+  }
+
+  console.log(`[Quiz DM] Sending quiz DM to ${userName} (${userId})`);
+
+  // Get user's email to look up their JID
+  const email = await getUserEmail(userId);
+  if (!email) {
+    console.log(`[Quiz DM] Could not get email for ${userName}`);
+    return;
+  }
+
+  // Mark as sent
+  dmSentToParticipants.get(meetingId).add(userId);
+
+  // Call Python backend to send DM via chatbot
+  const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+  try {
+    const response = await fetch(`${backendUrl}/api/quiz/dm-participant`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        meeting_id: meetingId,
+        user_id: userId,
+        user_name: userName,
+        user_email: email
+      })
+    });
+
+    if (response.ok) {
+      console.log(`[Quiz DM] Successfully triggered DM to ${userName} (${email})`);
+    } else {
+      const error = await response.text();
+      console.error(`[Quiz DM] Failed: ${error}`);
+    }
+  } catch (error) {
+    console.error(`[Quiz DM] Error: ${error.message}`);
+  }
 }
 
 // Start RTMS for a meeting via API
@@ -172,6 +293,29 @@ app.get('/oauth/callback', (req, res) => {
   `);
 });
 
+// Zoom Team Chat Chatbot webhook - broadcasts to connected WebSocket clients
+app.post('/webhook/zoom-chatbot', async (req, res) => {
+  const payload = req.body;
+  console.log('[Chatbot Webhook] Received:', JSON.stringify(payload).substring(0, 200));
+
+  // Broadcast the chatbot event to all connected WebSocket clients
+  // Local Python backend can listen for 'chatbot_webhook' type messages
+  broadcastToFrontendClients({
+    type: 'chatbot_webhook',
+    data: payload,
+    headers: {
+      'x-zm-signature': req.headers['x-zm-signature'] || '',
+      'x-zm-request-timestamp': req.headers['x-zm-request-timestamp'] || ''
+    },
+    timestamp: Date.now()
+  });
+
+  console.log('[Chatbot Webhook] Broadcasted to WebSocket clients');
+
+  // Return success to Zoom immediately
+  res.json({ success: true });
+});
+
 // API endpoint to get accumulated transcripts for a meeting
 app.get('/api/transcripts/:meetingId', (req, res) => {
   const meetingId = req.params.meetingId;
@@ -215,6 +359,57 @@ app.delete('/api/transcripts', (req, res) => {
   meetingTranscripts.clear();
   console.log(`[RTMS] Cleared all transcripts (${count} meetings)`);
   res.json({ success: true, message: `Cleared ${count} meetings` });
+});
+
+// API endpoint to trigger quiz DM to a specific user
+// Called from Python backend's "Send Quiz to All" feature
+app.post('/api/trigger-quiz-dm', async (req, res) => {
+  const { meeting_id, user_name, user_id } = req.body;
+
+  console.log(`[Quiz] Trigger DM for ${user_name} in meeting ${meeting_id}`);
+
+  try {
+    // Find user_id from transcripts if not provided
+    let targetUserId = user_id;
+    if (!targetUserId && meetingTranscripts.has(meeting_id)) {
+      // Look through transcripts to find this user
+      const transcripts = meetingTranscripts.get(meeting_id);
+      for (const t of transcripts) {
+        if (t.speaker === user_name && t.userId) {
+          targetUserId = t.userId;
+          break;
+        }
+      }
+    }
+
+    if (!targetUserId) {
+      // Can't find user_id, try to DM via Python backend directly with email lookup
+      const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/api/quiz/dm-by-name`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_id,
+          user_name
+        })
+      });
+
+      if (response.ok) {
+        res.json({ success: true, message: `Quiz DM triggered for ${user_name}` });
+      } else {
+        res.json({ success: false, error: 'Could not find user' });
+      }
+      return;
+    }
+
+    // We have user_id, trigger the DM
+    await dmParticipantQuiz(meeting_id, targetUserId, user_name);
+    res.json({ success: true, message: `Quiz DM sent to ${user_name}` });
+
+  } catch (error) {
+    console.error(`[Quiz] Error triggering DM: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 await RTMSManager.init(rtmsConfig);
@@ -271,12 +466,18 @@ setupFrontendWss(server);
 RTMSManager.on('transcript', async ({ text, userId, userName, timestamp, meetingId, streamId, productType }) => {
   console.log(`Transcript [${userName}]: ${text}`);
 
+  // Auto-DM quiz to participants when they first speak
+  if (userId && userName) {
+    dmParticipantQuiz(meetingId, userId, userName);
+  }
+
   // Accumulate transcript
   if (!meetingTranscripts.has(meetingId)) {
     meetingTranscripts.set(meetingId, []);
   }
   meetingTranscripts.get(meetingId).push({
     speaker: userName,
+    userId: userId,
     text: text,
     timestamp: timestamp || Date.now()
   });
@@ -302,6 +503,88 @@ RTMSManager.on('transcript', async ({ text, userId, userName, timestamp, meeting
   // Broadcast to frontend WebSocket clients
   broadcastToFrontendClients({
     type: 'transcript',
+    data: {
+      speaker: userName,
+      text: text,
+      timestamp: timestamp || Date.now(),
+      meetingId: meetingId
+    }
+  });
+});
+
+// Handle chat messages from meeting
+RTMSManager.on('chat', async ({ text, userId, userName, timestamp, meetingId, streamId, productType }) => {
+  console.log(`[Chat] [${userName}]: ${text}`);
+
+  // Check for quiz command
+  if (text.toLowerCase().includes('/quiz') || text.toLowerCase() === 'quiz') {
+    console.log(`[Quiz] Quiz command received from ${userName} in meeting ${meetingId}`);
+
+    // Send acknowledgment
+    await sendMeetingChatMessage(meetingId, `Hi ${userName}! Starting quiz... 🎓`);
+
+    // Forward to Python backend to generate quiz
+    const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+    try {
+      const response = await fetch(`${backendUrl}/api/quiz/start-meeting-quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_id: meetingId,
+          user_name: userName,
+          user_id: userId
+        })
+      });
+
+      if (response.ok) {
+        const quizData = await response.json();
+        // Send first question to meeting chat
+        if (quizData.question) {
+          await sendMeetingChatMessage(meetingId, quizData.question);
+        }
+      } else {
+        await sendMeetingChatMessage(meetingId, "Sorry, couldn't start quiz. Try again later.");
+      }
+    } catch (error) {
+      console.error('[Quiz] Error starting quiz:', error);
+      await sendMeetingChatMessage(meetingId, "Quiz service unavailable. Please try again.");
+    }
+  }
+
+  // Check for quiz answers (A, B, C, D)
+  const answerMatch = text.trim().toUpperCase().match(/^([ABCD])$/);
+  if (answerMatch) {
+    const answer = answerMatch[1];
+    console.log(`[Quiz] Answer received from ${userName}: ${answer}`);
+
+    // Forward to Python backend
+    const backendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+    try {
+      const response = await fetch(`${backendUrl}/api/quiz/meeting-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_id: meetingId,
+          user_name: userName,
+          user_id: userId,
+          answer: answer
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.message) {
+          await sendMeetingChatMessage(meetingId, result.message);
+        }
+      }
+    } catch (error) {
+      console.error('[Quiz] Error processing answer:', error);
+    }
+  }
+
+  // Broadcast to frontend
+  broadcastToFrontendClients({
+    type: 'chat',
     data: {
       speaker: userName,
       text: text,

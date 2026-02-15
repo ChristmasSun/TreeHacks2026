@@ -127,7 +127,7 @@
     <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-8 text-center">
       <h2 class="text-2xl font-bold mb-2">Ready to Start Breakout Rooms?</h2>
       <p class="text-white/70 mb-6">This will launch AI tutors for all registered students</p>
-      <button 
+      <button
         id="trigger-btn"
         onclick="triggerBreakout()"
         class="bg-white text-gray-900 font-semibold px-8 py-4 rounded-xl text-lg hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -135,6 +135,63 @@
         🚀 Start AI Tutoring Sessions
       </button>
       <div id="trigger-result" class="mt-4 text-sm"></div>
+    </div>
+
+    <!-- Quiz Section -->
+    <div class="bg-gradient-to-r from-green-600 to-teal-600 rounded-xl p-8 mt-8">
+      <h2 class="text-2xl font-bold mb-2 text-center">📝 Quiz Mode</h2>
+      <p class="text-white/70 mb-6 text-center">Send quizzes to all meeting participants via Team Chat</p>
+
+      <!-- Quiz Video Config -->
+      <div class="bg-black/20 rounded-lg p-4 mb-6">
+        <h3 class="font-semibold mb-3">Quiz Content</h3>
+        <div class="flex gap-3 items-end">
+          <div class="flex-1">
+            <label class="block text-sm text-white/70 mb-1">Video Output Directory</label>
+            <input
+              type="text"
+              id="quiz-output-dir"
+              value="output"
+              placeholder="e.g., output or /path/to/videos"
+              class="w-full bg-black/30 border border-white/20 rounded-lg px-4 py-2 text-white focus:border-white/50 focus:outline-none"
+            >
+          </div>
+          <button
+            onclick="loadQuizVideos()"
+            class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
+          >
+            📂 Load Videos
+          </button>
+        </div>
+        <div id="quiz-videos-status" class="mt-2 text-sm text-white/60"></div>
+      </div>
+
+      <!-- Quiz Controls -->
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <button
+          id="quiz-all-btn"
+          onclick="triggerQuizAll()"
+          class="bg-white text-gray-900 font-semibold px-6 py-4 rounded-xl hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          🎯 Send Quiz to All Participants
+        </button>
+        <button
+          onclick="checkQuizStatus()"
+          class="bg-white/20 hover:bg-white/30 font-semibold px-6 py-4 rounded-xl transition-colors"
+        >
+          📊 Check Quiz Status
+        </button>
+      </div>
+
+      <div id="quiz-result" class="text-center text-sm"></div>
+
+      <!-- Active Quizzes -->
+      <div class="bg-black/20 rounded-lg p-4 mt-4">
+        <h3 class="font-semibold mb-2">Active Quiz Sessions</h3>
+        <div id="quiz-sessions-list" class="text-sm text-white/70">
+          <p class="italic">No active quizzes</p>
+        </div>
+      </div>
     </div>
 
     <!-- Recent Activity -->
@@ -344,12 +401,99 @@
       }
     }
 
+    // ============ Quiz Functions ============
+
+    async function loadQuizVideos() {
+      const outputDir = document.getElementById('quiz-output-dir').value;
+      const status = document.getElementById('quiz-videos-status');
+
+      status.textContent = 'Loading videos...';
+      status.className = 'mt-2 text-sm text-white/60';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/quiz/load-videos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ output_dir: outputDir })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          status.textContent = `✓ Loaded ${data.count} videos from ${data.output_dir}`;
+          status.className = 'mt-2 text-sm text-green-300';
+          log(`Loaded ${data.count} quiz videos`);
+        } else {
+          status.textContent = '✗ ' + (data.detail || 'Failed to load videos');
+          status.className = 'mt-2 text-sm text-red-300';
+        }
+      } catch (err) {
+        status.textContent = '✗ Error: ' + err.message;
+        status.className = 'mt-2 text-sm text-red-300';
+        log('Failed to load quiz videos: ' + err.message);
+      }
+    }
+
+    async function triggerQuizAll() {
+      const btn = document.getElementById('quiz-all-btn');
+      const result = document.getElementById('quiz-result');
+
+      btn.disabled = true;
+      btn.textContent = '⏳ Sending quizzes...';
+      result.textContent = '';
+
+      try {
+        const res = await fetch(`${API_BASE}/api/quiz/trigger-all`, { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          result.innerHTML = `<span class="text-green-300">✓ ${data.message}</span>`;
+          log(`Quiz triggered: ${data.message}`);
+        } else {
+          result.innerHTML = `<span class="text-red-300">✗ ${data.error || 'Failed'}</span>`;
+        }
+      } catch (err) {
+        result.innerHTML = `<span class="text-red-300">✗ Error: ${err.message}</span>`;
+        log('Quiz trigger failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🎯 Send Quiz to All Participants';
+      }
+    }
+
+    async function checkQuizStatus() {
+      const list = document.getElementById('quiz-sessions-list');
+
+      try {
+        // Get videos status
+        const videosRes = await fetch(`${API_BASE}/api/quiz/videos`);
+        const videosData = await videosRes.json();
+
+        let html = '';
+
+        if (videosData.count > 0) {
+          html += `<p class="text-green-300 mb-2">📹 ${videosData.count} videos loaded</p>`;
+        } else {
+          html += `<p class="text-yellow-300 mb-2">⚠️ No videos loaded - click "Load Videos" first</p>`;
+        }
+
+        // Could add more session stats here
+        html += `<p class="text-white/50 text-xs">Output dir: ${videosData.output_dir}</p>`;
+
+        list.innerHTML = html;
+        log('Quiz status checked');
+      } catch (err) {
+        list.innerHTML = `<p class="text-red-300">Error: ${err.message}</p>`;
+        log('Quiz status check failed: ' + err.message);
+      }
+    }
+
     // Initialize
     checkHealth();
     fetchStudents();
     loadContext();
     fetchTranscripts();
-    
+    checkQuizStatus();
+
     // Auto-refresh every 5 seconds
     setInterval(() => {
       checkHealth();
