@@ -21,6 +21,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 from backend.services.render_ws_client import start_render_client
 from backend.services.chatbot_ws_handler import setup_chatbot_handlers
+from backend.services.expression_service import init_expression_service
 
 # Configure logging
 logging.basicConfig(
@@ -40,6 +41,9 @@ async def main():
 
     # Register chatbot handlers
     setup_chatbot_handlers()
+
+    # Register expression analysis handlers
+    init_expression_service()
 
     # Start the WebSocket client (runs forever with reconnection)
     await start_render_client(render_url)

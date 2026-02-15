@@ -232,6 +232,12 @@ const rtmsConfig = {
       contentType: MEDIA_PARAMS.MEDIA_CONTENT_TYPE_TEXT,
       language: MEDIA_PARAMS.LANGUAGE_ID_ENGLISH,
     },
+    video: {
+      codec: MEDIA_PARAMS.MEDIA_PAYLOAD_TYPE_JPG,
+      resolution: MEDIA_PARAMS.MEDIA_RESOLUTION_HD,
+      dataOpt: MEDIA_PARAMS.MEDIA_DATA_OPTION_VIDEO_SINGLE_ACTIVE_STREAM,
+      fps: 5,
+    },
   }
 };
 
@@ -600,6 +606,35 @@ RTMSManager.on('meeting.rtms_started', (payload) => {
 
 RTMSManager.on('meeting.rtms_stopped', (payload) => {
   console.log(`RTMS stopped for meeting ${payload.meeting_uuid}`);
+});
+
+// Handle video frames for demeanor/expression analysis
+// Throttle: only forward frames at ~1 per 3 seconds to avoid overwhelming clients
+const lastVideoFrameTime = new Map(); // meetingId -> timestamp
+const VIDEO_THROTTLE_MS = 3000;
+
+RTMSManager.on('video', async ({ buffer, userId, userName, timestamp, meetingId, streamId, productType }) => {
+  const now = Date.now();
+  const lastTime = lastVideoFrameTime.get(meetingId) || 0;
+
+  // Throttle frames
+  if (now - lastTime < VIDEO_THROTTLE_MS) {
+    return;
+  }
+  lastVideoFrameTime.set(meetingId, now);
+
+  console.log(`[Video] Frame received for meeting ${meetingId} (${buffer.length} bytes)`);
+
+  // Broadcast video frame to connected WebSocket clients (local Python backend)
+  // The local backend will forward to local expression-dashboard
+  broadcastToFrontendClients({
+    type: 'video_frame',
+    data: {
+      meetingId,
+      frame: buffer.toString('base64'),
+      timestamp: timestamp || now,
+    }
+  });
 });
 
 await RTMSManager.start();

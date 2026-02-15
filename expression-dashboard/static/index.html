@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expression Analysis Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+  <div class="max-w-6xl mx-auto py-8 px-4">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold">Expression Analysis Dashboard</h1>
+        <p class="text-gray-400 mt-1">Real-time facial expression monitoring for Zoom meetings</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div id="status-dot" class="w-3 h-3 rounded-full bg-gray-500"></div>
+        <span id="status-text" class="text-sm text-gray-400">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Meeting Selector -->
+    <div class="bg-gray-800 rounded-xl p-4 mb-6">
+      <div class="flex items-center gap-4">
+        <label class="text-sm text-gray-400">Meeting:</label>
+        <select id="meeting-select" class="bg-gray-700/50 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none flex-1">
+          <option value="">Waiting for meetings...</option>
+        </select>
+        <button onclick="refreshMeetings()" class="text-sm text-blue-400 hover:text-blue-300 px-3 py-2">Refresh</button>
+      </div>
+    </div>
+
+    <!-- Alerts -->
+    <div id="alerts" class="space-y-3 mb-6 hidden">
+      <div id="confusion-alert" class="bg-red-900/40 border border-red-700 rounded-xl p-4 hidden">
+        <div class="flex items-center gap-2">
+          <span class="text-red-400 font-semibold text-lg">⚠ Confusion Detected</span>
+        </div>
+        <p class="text-red-300 text-sm mt-1">Students appear confused or distressed. Consider pausing to clarify or ask questions.</p>
+      </div>
+      <div id="boredom-alert" class="bg-yellow-900/40 border border-yellow-700 rounded-xl p-4 hidden">
+        <div class="flex items-center gap-2">
+          <span class="text-yellow-400 font-semibold text-lg">😴 Boredom Alert</span>
+        </div>
+        <p class="text-yellow-300 text-sm mt-1">Students have been mostly neutral/disengaged for an extended period. Try an interactive activity.</p>
+      </div>
+    </div>
+
+    <!-- Top Row: Mood + Distribution -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+
+      <!-- Class Mood Card -->
+      <div id="mood-card" class="bg-gray-800 rounded-xl p-6">
+        <h2 class="text-lg font-semibold mb-4">Class Mood</h2>
+        <div id="mood-content" class="text-center py-6">
+          <div id="mood-emoji" class="text-6xl mb-3">—</div>
+          <div id="mood-label" class="text-2xl font-bold capitalize">Waiting for data</div>
+          <div id="mood-detail" class="text-gray-400 text-sm mt-2">
+            <span id="face-count">0</span> faces detected
+          </div>
+        </div>
+      </div>
+
+      <!-- Emotion Distribution -->
+      <div class="bg-gray-800 rounded-xl p-6">
+        <h2 class="text-lg font-semibold mb-4">Emotion Distribution</h2>
+        <div class="flex items-center justify-center" style="height: 220px;">
+          <canvas id="distribution-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="bg-gray-800 rounded-xl p-6 mb-6">
+      <h2 class="text-lg font-semibold mb-4">Mood Timeline</h2>
+      <div style="height: 250px;">
+        <canvas id="timeline-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div class="bg-gray-800 rounded-xl p-4 text-center">
+        <div class="text-gray-400 text-xs uppercase tracking-wide">Faces</div>
+        <div id="stat-faces" class="text-2xl font-bold mt-1">0</div>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-4 text-center">
+        <div class="text-gray-400 text-xs uppercase tracking-wide">Samples</div>
+        <div id="stat-samples" class="text-2xl font-bold mt-1">0</div>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-4 text-center">
+        <div class="text-gray-400 text-xs uppercase tracking-wide">Confusion</div>
+        <div id="stat-confusion" class="text-2xl font-bold mt-1">0%</div>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-4 text-center">
+        <div class="text-gray-400 text-xs uppercase tracking-wide">Engagement</div>
+        <div id="stat-engagement" class="text-2xl font-bold mt-1">0%</div>
+      </div>
+    </div>
+
+    <!-- Emotion Breakdown Bars -->
+    <div class="bg-gray-800 rounded-xl p-6">
+      <h2 class="text-lg font-semibold mb-4">Emotion Breakdown</h2>
+      <div id="emotion-bars" class="space-y-3">
+        <p class="text-gray-500 text-sm">Waiting for data...</p>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+// ---- Config ----
+const POLL_INTERVAL = 3000;
+const EMOTION_COLORS = {
+  happy: '#22c55e',
+  neutral: '#6b7280',
+  sad: '#3b82f6',
+  angry: '#ef4444',
+  fear: '#a855f7',
+  surprise: '#f97316',
+  disgust: '#84cc16',
+};
+const MOOD_EMOJI = {
+  happy: '😊', neutral: '😐', sad: '😢', angry: '😠',
+  fear: '😨', surprise: '😮', disgust: '🤢',
+};
+const MOOD_BG = {
+  happy: 'border-green-600', neutral: 'border-gray-600', sad: 'border-blue-600',
+  angry: 'border-red-600', fear: 'border-purple-600', surprise: 'border-orange-600',
+  disgust: 'border-lime-600',
+};
+
+let selectedMeeting = '';
+let distributionChart = null;
+let timelineChart = null;
+let pollTimer = null;
+
+// ---- Charts Init ----
+function initCharts() {
+  const dCtx = document.getElementById('distribution-chart').getContext('2d');
+  distributionChart = new Chart(dCtx, {
+    type: 'doughnut',
+    data: {
+      labels: Object.keys(EMOTION_COLORS).map(k => k.charAt(0).toUpperCase() + k.slice(1)),
+      datasets: [{
+        data: [0, 0, 0, 0, 0, 0, 0],
+        backgroundColor: Object.values(EMOTION_COLORS),
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#9ca3af', font: { size: 11 }, padding: 8 }
+        }
+      }
+    }
+  });
+
+  const tCtx = document.getElementById('timeline-chart').getContext('2d');
+  timelineChart = new Chart(tCtx, {
+    type: 'line',
+    data: { labels: [], datasets: [] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          ticks: { color: '#6b7280', font: { size: 10 }, maxTicksLimit: 10 },
+          grid: { color: '#374151' },
+        },
+        y: {
+          min: 0, max: 1,
+          ticks: { color: '#6b7280', font: { size: 10 } },
+          grid: { color: '#374151' },
+        }
+      },
+      plugins: {
+        legend: {
+          labels: { color: '#9ca3af', font: { size: 11 }, usePointStyle: true, padding: 12 }
+        }
+      },
+      elements: { line: { tension: 0.3, borderWidth: 2 }, point: { radius: 0 } },
+      interaction: { intersect: false, mode: 'index' },
+    }
+  });
+}
+
+// ---- Meeting Selection ----
+async function refreshMeetings() {
+  try {
+    const res = await fetch('/api/emotions');
+    const data = await res.json();
+    const select = document.getElementById('meeting-select');
+    const prev = select.value;
+
+    if (data.meetings.length === 0) {
+      select.innerHTML = '<option value="">No active meetings</option>';
+      setStatus('gray', 'No meetings detected');
+      return;
+    }
+
+    select.innerHTML = data.meetings.map(m =>
+      `<option value="${m.meeting_id}">${m.meeting_id} (${m.record_count} samples)</option>`
+    ).join('');
+
+    // Restore previous or pick first
+    if (prev && data.meetings.some(m => m.meeting_id === prev)) {
+      select.value = prev;
+    }
+    selectedMeeting = select.value;
+    setStatus('green', 'Connected');
+  } catch {
+    setStatus('red', 'Server unreachable');
+  }
+}
+
+document.getElementById('meeting-select').addEventListener('change', (e) => {
+  selectedMeeting = e.target.value;
+});
+
+// ---- Polling ----
+async function poll() {
+  if (!selectedMeeting) {
+    await refreshMeetings();
+    return;
+  }
+
+  try {
+    const [currentRes, timelineRes] = await Promise.all([
+      fetch(`/api/emotions/${encodeURIComponent(selectedMeeting)}/current`),
+      fetch(`/api/emotions/${encodeURIComponent(selectedMeeting)}/timeline`),
+    ]);
+    const current = await currentRes.json();
+    const timeline = await timelineRes.json();
+
+    if (current.status === 'no_data') {
+      setStatus('yellow', 'Waiting for frames...');
+      return;
+    }
+
+    setStatus('green', 'Live');
+    updateMood(current);
+    updateDistribution(current);
+    updateTimeline(timeline);
+    updateStats(current);
+    updateBars(current);
+    updateAlerts(current);
+  } catch {
+    setStatus('red', 'Server unreachable');
+  }
+}
+
+// ---- UI Updates ----
+function setStatus(color, text) {
+  const dot = document.getElementById('status-dot');
+  const label = document.getElementById('status-text');
+  dot.className = `w-3 h-3 rounded-full bg-${color}-500`;
+  if (color === 'green') dot.classList.add('animate-pulse');
+  label.textContent = text;
+}
+
+function updateMood(data) {
+  const card = document.getElementById('mood-card');
+  const emoji = document.getElementById('mood-emoji');
+  const label = document.getElementById('mood-label');
+  const detail = document.getElementById('mood-detail');
+  const faceCount = document.getElementById('face-count');
+
+  const d = data.dominant;
+  emoji.textContent = MOOD_EMOJI[d] || '❓';
+  label.textContent = d;
+
+  // Border color based on mood
+  card.className = 'bg-gray-800 rounded-xl p-6 border-l-4 ' + (MOOD_BG[d] || 'border-gray-600');
+  faceCount.textContent = data.num_faces;
+}
+
+function updateDistribution(data) {
+  const emotions = data.avg_emotions || data.emotions;
+  const keys = Object.keys(EMOTION_COLORS);
+  distributionChart.data.datasets[0].data = keys.map(k => Math.round((emotions[k] || 0) * 100));
+  distributionChart.update('none');
+}
+
+function updateTimeline(data) {
+  if (!data.buckets || data.buckets.length === 0) return;
+
+  const keys = ['happy', 'neutral', 'sad', 'surprise', 'angry'];
+  const labels = data.buckets.map(b => {
+    const d = new Date(b.timestamp * 1000);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  });
+
+  timelineChart.data.labels = labels;
+  timelineChart.data.datasets = keys.map(k => ({
+    label: k.charAt(0).toUpperCase() + k.slice(1),
+    data: data.buckets.map(b => b.emotions[k] || 0),
+    borderColor: EMOTION_COLORS[k],
+    backgroundColor: EMOTION_COLORS[k] + '20',
+    fill: false,
+  }));
+  timelineChart.update('none');
+}
+
+function updateStats(data) {
+  document.getElementById('stat-faces').textContent = data.num_faces;
+  document.getElementById('stat-samples').textContent = data.total_records;
+  document.getElementById('stat-confusion').textContent = Math.round(data.confusion_score * 100) + '%';
+
+  // Engagement = happy + surprise (positive attention)
+  const e = data.avg_emotions || data.emotions;
+  const engagement = Math.round(((e.happy || 0) + (e.surprise || 0)) * 100);
+  document.getElementById('stat-engagement').textContent = Math.min(engagement, 100) + '%';
+}
+
+function updateBars(data) {
+  const container = document.getElementById('emotion-bars');
+  const emotions = data.avg_emotions || data.emotions;
+  const keys = Object.keys(EMOTION_COLORS);
+
+  container.innerHTML = keys.map(k => {
+    const pct = Math.round((emotions[k] || 0) * 100);
+    return `
+      <div class="flex items-center gap-3">
+        <span class="w-20 text-sm text-gray-400 capitalize">${k}</span>
+        <div class="flex-1 bg-gray-700 rounded-full h-3 overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-500" style="width:${pct}%; background:${EMOTION_COLORS[k]}"></div>
+        </div>
+        <span class="w-10 text-sm text-gray-400 text-right">${pct}%</span>
+      </div>`;
+  }).join('');
+}
+
+function updateAlerts(data) {
+  const alertsDiv = document.getElementById('alerts');
+  const confAlert = document.getElementById('confusion-alert');
+  const boreAlert = document.getElementById('boredom-alert');
+
+  const anyAlert = data.confusion_alert || data.boredom_alert;
+  alertsDiv.classList.toggle('hidden', !anyAlert);
+  confAlert.classList.toggle('hidden', !data.confusion_alert);
+  boreAlert.classList.toggle('hidden', !data.boredom_alert);
+}
+
+// ---- Init ----
+initCharts();
+refreshMeetings();
+pollTimer = setInterval(poll, POLL_INTERVAL);
+</script>
+</body>
+</html>

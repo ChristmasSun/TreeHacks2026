@@ -14,7 +14,7 @@ export const config = {
 
   mode: process.env.MODE || 'webhook',
   zoomWSURLForEvents: process.env.zoomWSURLForEvents || '',
-  
+
   webhookPath: process.env.WEBHOOK_PATH || '/webhook',
 
   clientId: process.env.ZOOM_CLIENT_ID,
