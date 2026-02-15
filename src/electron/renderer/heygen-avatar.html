@@ -5,34 +5,60 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI Tutor</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap');
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: #000;
       color: white;
       height: 100vh;
       display: flex;
       flex-direction: column;
     }
+
+    /* Glass utility */
+    .glass {
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    /* Shimmer animation */
+    @keyframes shimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
     .header {
       padding: 12px 16px;
-      background: rgba(0,0,0,0.8);
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid rgba(255,255,255,0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     }
-    .header h1 { font-size: 14px; font-weight: 500; opacity: 0.8; }
+    .header h1 {
+      font-size: 14px;
+      font-weight: 300;
+      letter-spacing: 0.025em;
+      color: rgba(255, 255, 255, 0.7);
+    }
     .close-btn {
       background: none;
       border: none;
       color: white;
-      opacity: 0.6;
+      opacity: 0.4;
       cursor: pointer;
       font-size: 20px;
       padding: 4px 8px;
+      border-radius: 8px;
+      transition: all 0.2s;
     }
-    .close-btn:hover { opacity: 1; }
+    .close-btn:hover { opacity: 0.8; background: rgba(255, 255, 255, 0.06); }
     .main {
       flex: 1;
       display: flex;
@@ -42,11 +68,12 @@
     }
     .video-container {
       flex: 1;
-      background: #111;
-      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 16px;
       overflow: hidden;
       position: relative;
       min-height: 300px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
     #avatar-video {
       width: 100%;
@@ -60,34 +87,48 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background: #111;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(10px);
     }
     .spinner {
       width: 40px;
       height: 40px;
-      border: 3px solid rgba(59, 130, 246, 0.3);
-      border-top-color: #3b82f6;
+      border: 2px solid rgba(96, 165, 250, 0.2);
+      border-top-color: #60a5fa;
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loading p, .error p { margin-top: 12px; opacity: 0.7; font-size: 14px; }
-    .error { color: #f87171; }
+    .loading p, .error p {
+      margin-top: 12px;
+      opacity: 0.6;
+      font-size: 14px;
+      font-weight: 300;
+    }
+    .error { color: rgba(248, 113, 113, 0.8); }
     .retry-btn {
       margin-top: 16px;
       padding: 8px 16px;
-      background: #3b82f6;
-      border: none;
-      border-radius: 8px;
-      color: white;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 12px;
+      color: #93c5fd;
       cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+    .retry-btn:hover {
+      background: rgba(59, 130, 246, 0.3);
     }
     .chat {
       width: 300px;
       display: flex;
       flex-direction: column;
-      background: rgba(255,255,255,0.05);
-      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
       overflow: hidden;
     }
     .messages {
@@ -101,92 +142,123 @@
       border-radius: 12px;
       max-width: 85%;
       font-size: 14px;
+      font-weight: 300;
     }
     .message.student {
-      background: #3b82f6;
+      background: rgba(59, 130, 246, 0.3);
+      border: 1px solid rgba(59, 130, 246, 0.2);
       margin-left: auto;
     }
     .message.avatar {
-      background: #374151;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
     .input-area {
       padding: 12px;
-      border-top: 1px solid rgba(255,255,255,0.1);
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
       display: flex;
       gap: 8px;
     }
     .input-area input {
       flex: 1;
-      background: #1f2937;
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
       padding: 8px 12px;
       color: white;
       font-size: 14px;
+      font-family: inherit;
+      font-weight: 300;
+      transition: all 0.2s;
     }
-    .input-area input:focus { outline: none; border-color: #3b82f6; }
+    .input-area input:focus {
+      outline: none;
+      border-color: rgba(96, 165, 250, 0.6);
+      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.2);
+    }
     .input-area button {
       padding: 8px 16px;
-      background: #3b82f6;
-      border: none;
-      border-radius: 8px;
-      color: white;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: 12px;
+      color: #93c5fd;
       cursor: pointer;
+      font-family: inherit;
+      font-size: 14px;
+      transition: all 0.2s;
     }
-    .input-area button:disabled { background: #374151; cursor: not-allowed; }
+    .input-area button:hover { background: rgba(59, 130, 246, 0.3); }
+    .input-area button:disabled {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(255, 255, 255, 0.06);
+      color: rgba(255, 255, 255, 0.3);
+      cursor: not-allowed;
+    }
     .mic-btn {
       padding: 8px 12px;
-      background: #374151;
-      border: none;
-      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
       color: white;
       cursor: pointer;
       font-size: 18px;
-      transition: background 0.2s;
+      transition: all 0.2s;
     }
-    .mic-btn:hover { background: #4b5563; }
-    .mic-btn.recording { background: #ef4444; animation: pulse-mic 1s infinite; }
+    .mic-btn:hover { background: rgba(255, 255, 255, 0.1); }
+    .mic-btn.recording {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: rgba(59, 130, 246, 0.3);
+      animation: pulse-mic 1.5s ease-in-out infinite;
+    }
     .mic-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     @keyframes pulse-mic {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5); }
-      50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
+      50% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
     }
     .hidden { display: none !important; }
     .mode-toggle {
       display: flex;
       gap: 4px;
       padding: 4px;
-      background: rgba(255,255,255,0.1);
-      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 12px;
       margin-bottom: 12px;
     }
     .mode-btn {
       flex: 1;
       padding: 8px 12px;
       border: none;
-      border-radius: 6px;
+      border-radius: 10px;
       background: transparent;
-      color: rgba(255,255,255,0.6);
+      color: rgba(255, 255, 255, 0.4);
       cursor: pointer;
       font-size: 12px;
+      font-family: inherit;
+      font-weight: 300;
       transition: all 0.2s;
     }
     .mode-btn.active {
-      background: #3b82f6;
-      color: white;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
     }
-    .mode-btn:hover:not(.active) { background: rgba(255,255,255,0.1); }
+    .mode-btn:hover:not(.active) { background: rgba(255, 255, 255, 0.06); }
     .speaking-indicator {
       position: absolute;
       bottom: 12px;
       left: 12px;
-      background: rgba(0,0,0,0.6);
-      padding: 6px 12px;
+      background: rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 6px 14px;
       border-radius: 20px;
       font-size: 12px;
+      font-weight: 300;
       display: flex;
       align-items: center;
       gap: 8px;
+      color: rgba(255, 255, 255, 0.6);
     }
     .speaking-dots {
       display: flex;
@@ -195,7 +267,7 @@
     .speaking-dots span {
       width: 6px;
       height: 6px;
-      background: #3b82f6;
+      background: #60a5fa;
       border-radius: 50%;
       animation: pulse 1s infinite;
     }
@@ -209,7 +281,9 @@
     .explainer-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(0,0,0,0.95);
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -223,17 +297,20 @@
     }
     .explainer-header h2 {
       font-size: 18px;
-      font-weight: 600;
+      font-weight: 300;
+      letter-spacing: 0.025em;
       margin-bottom: 4px;
     }
     .explainer-header p {
       font-size: 14px;
-      opacity: 0.7;
+      opacity: 0.5;
+      font-weight: 300;
     }
     #explainer-video {
       max-width: 100%;
       max-height: calc(100% - 100px);
-      border-radius: 8px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
     }
     .explainer-controls {
       padding: 12px 20px;
@@ -243,21 +320,25 @@
     .explainer-btn {
       padding: 8px 20px;
       border: none;
-      border-radius: 8px;
+      border-radius: 12px;
       cursor: pointer;
       font-size: 14px;
+      font-family: inherit;
+      font-weight: 400;
       transition: all 0.2s;
     }
     .explainer-btn.primary {
-      background: #3b82f6;
-      color: white;
+      background: rgba(59, 130, 246, 0.2);
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
     }
-    .explainer-btn.primary:hover { background: #2563eb; }
+    .explainer-btn.primary:hover { background: rgba(59, 130, 246, 0.3); }
     .explainer-btn.secondary {
-      background: #374151;
-      color: white;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: rgba(255, 255, 255, 0.6);
     }
-    .explainer-btn.secondary:hover { background: #4b5563; }
+    .explainer-btn.secondary:hover { background: rgba(255, 255, 255, 0.1); }
   </style>
 </head>
 <body>
@@ -265,7 +346,7 @@
     <h1>AI Tutor &bull; <span id="student-name">Student</span></h1>
     <button class="close-btn" onclick="closeWindow()">&times;</button>
   </div>
-  
+
   <div class="main">
     <div class="video-container">
       <div class="loading" id="loading">
@@ -297,7 +378,7 @@
         <span>Speaking...</span>
       </div>
     </div>
-    
+
     <div class="chat">
       <div class="mode-toggle">
         <div id="voice-status" class="mode-btn active" style="flex:1; cursor:default; text-align:center;">
@@ -315,7 +396,7 @@
 
   <script type="module">
     import StreamingAvatar, { AvatarQuality, StreamingEvents } from 'https://esm.sh/@heygen/streaming-avatar@latest';
-    
+
     let avatar = null;
     let sessionId = null;
     let conversationHistory = [];
@@ -344,34 +425,34 @@
       }
       // Don't wait for completion — AVATAR_STOP_TALKING event handles it
     }
-    
+
     const params = new URLSearchParams(window.location.search);
     const studentName = params.get('name') || 'Student';
     const backendUrl = params.get('backend') || 'http://127.0.0.1:8000';
-    
+
     document.getElementById('student-name').textContent = studentName;
-    
+
     window.closeWindow = function() {
       if (avatar) avatar.stopAvatar().catch(() => {});
       window.close();
     }
-    
+
     function showLoading() {
       document.getElementById('loading').classList.remove('hidden');
       document.getElementById('error').classList.add('hidden');
     }
-    
+
     function showError(msg) {
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('error').classList.remove('hidden');
       document.getElementById('error-msg').textContent = msg;
     }
-    
+
     function hideOverlays() {
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('error').classList.add('hidden');
     }
-    
+
     function addMessage(role, text) {
       const div = document.createElement('div');
       div.className = 'message ' + role;
@@ -379,23 +460,23 @@
       document.getElementById('messages').appendChild(div);
       document.getElementById('messages').scrollTop = 9999;
     }
-    
+
     async function fetchToken() {
       const res = await fetch(backendUrl + '/api/heygen-token');
       if (!res.ok) throw new Error('Failed to get token');
       const data = await res.json();
       return data.token;
     }
-    
+
     window.startAvatar = async function() {
       showLoading();
-      
+
       try {
         const token = await fetchToken();
         console.log('Got token');
-        
+
         avatar = new StreamingAvatar({ token });
-        
+
         avatar.on(StreamingEvents.STREAM_READY, async (event) => {
           console.log('Stream ready');
           const video = document.getElementById('avatar-video');
@@ -426,12 +507,12 @@
           await avatarSpeak(greeting);
           isSpeakingResponse = false;
         });
-        
+
         avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
           console.log('Disconnected');
           showError('Connection lost');
         });
-        
+
         avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
           document.getElementById('speaking').classList.remove('hidden');
           console.log('🗣️ Avatar started talking');
@@ -450,22 +531,22 @@
             updateVoiceStatus('listening');
           }
         });
-        
+
         const session = await avatar.createStartAvatar({
           quality: AvatarQuality.Medium,
           avatarName: 'default',
         });
-        
+
         console.log('Session started:', session);
         sessionId = session.session_id;
-        
+
       } catch (err) {
         console.error('Full error:', err);
         console.error('Error details:', JSON.stringify(err, null, 2));
         showError(err.message || 'Failed to connect');
       }
     }
-    
+
     window.sendMessage = async function() {
       const input = document.getElementById('input');
       const text = input.value.trim();
@@ -501,7 +582,7 @@
         console.error('Speak error:', err);
       }
     }
-    
+
     document.getElementById('input').addEventListener('keypress', (e) => {
       if (e.key === 'Enter') window.sendMessage();
     });
@@ -522,22 +603,30 @@
       switch(status) {
         case 'listening':
           statusEl.textContent = '🎤 Listening...';
-          statusEl.style.background = '#10b981';
+          statusEl.style.background = 'rgba(59, 130, 246, 0.2)';
+          statusEl.style.borderColor = 'rgba(59, 130, 246, 0.2)';
+          statusEl.style.color = '#93c5fd';
           micBtn.classList.add('recording');
           break;
         case 'thinking':
           statusEl.textContent = '🤔 Thinking...';
-          statusEl.style.background = '#f59e0b';
+          statusEl.style.background = 'rgba(245, 158, 11, 0.2)';
+          statusEl.style.borderColor = 'rgba(245, 158, 11, 0.2)';
+          statusEl.style.color = '#fcd34d';
           micBtn.classList.remove('recording');
           break;
         case 'speaking':
           statusEl.textContent = '🗣️ Speaking (interrupt anytime)';
-          statusEl.style.background = '#3b82f6';
+          statusEl.style.background = 'rgba(59, 130, 246, 0.2)';
+          statusEl.style.borderColor = 'rgba(59, 130, 246, 0.2)';
+          statusEl.style.color = '#93c5fd';
           micBtn.classList.add('recording');
           break;
         case 'muted':
           statusEl.textContent = '🔇 Muted';
-          statusEl.style.background = '#6b7280';
+          statusEl.style.background = 'rgba(255, 255, 255, 0.04)';
+          statusEl.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+          statusEl.style.color = 'rgba(255, 255, 255, 0.4)';
           micBtn.classList.remove('recording');
           break;
       }

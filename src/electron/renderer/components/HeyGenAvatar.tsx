@@ -1,6 +1,6 @@
 /**
  * HeyGen Avatar Overlay Component
- * 
+ *
  * Displays a personalized HeyGen avatar when breakout rooms are triggered.
  * Uses LiveKit for WebRTC streaming.
  */
@@ -51,7 +51,7 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
     try {
       // Dynamically import LiveKit client
       const LivekitClient = await import('livekit-client');
-      
+
       const room = new LivekitClient.Room({
         adaptiveStream: true,
         dynacast: true,
@@ -59,12 +59,12 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
 
       room.on(LivekitClient.RoomEvent.TrackSubscribed, (track: any, publication: any, participant: any) => {
         console.log('Track subscribed:', track.kind, participant.identity);
-        
+
         if (track.kind === 'video' && videoRef.current) {
           track.attach(videoRef.current);
           setIsConnected(true);
           setIsConnecting(false);
-          
+
           // Initial greeting
           addMessage('avatar', `Hello ${studentName}! I'm here to help you understand the material. What questions do you have?`);
         }
@@ -77,7 +77,7 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
 
       await room.connect(livekitUrl, accessToken);
       roomRef.current = room;
-      
+
       console.log('Connected to LiveKit room');
 
       // Check for existing tracks
@@ -159,15 +159,15 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-black/90 flex flex-col items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-black/80 to-transparent flex items-center justify-between px-4">
-        <div className="text-white/80 text-sm font-medium">
-          AI Professor • Session with {studentName}
+      <div className="absolute top-0 left-0 right-0 h-12 bg-white/[0.04] backdrop-blur-xl border-b border-white/[0.08] flex items-center justify-between px-4">
+        <div className="text-white/70 text-sm font-light tracking-wide">
+          AI Professor · Session with {studentName}
         </div>
         <button
           onClick={onClose}
-          className="text-white/60 hover:text-white transition-colors p-2"
+          className="text-white/40 hover:text-white/80 transition-colors p-2"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -178,24 +178,24 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
       {/* Main Content */}
       <div className="flex flex-col lg:flex-row w-full max-w-5xl h-full max-h-[80vh] gap-4 p-4 pt-16">
         {/* Avatar Video */}
-        <div className="flex-1 relative rounded-2xl overflow-hidden bg-gray-900 min-h-[300px]">
+        <div className="flex-1 relative rounded-2xl overflow-hidden bg-gray-900/50 border border-white/[0.08] min-h-[300px]">
           {isConnecting && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto mb-4"></div>
-                <p className="text-white/80">Connecting to AI Professor...</p>
+                <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-400 border-t-transparent mx-auto mb-4"></div>
+                <p className="text-white/60 font-light">Connecting to AI Professor...</p>
               </div>
             </div>
           )}
-          
+
           {error && (
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center p-4">
-                <div className="text-red-400 mb-2">⚠️ Connection Error</div>
-                <p className="text-white/60 text-sm">{error}</p>
+                <div className="text-red-400/80 mb-2">Connection Error</div>
+                <p className="text-white/40 text-sm font-light">{error}</p>
                 <button
                   onClick={connectToAvatar}
-                  className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-sm transition-colors"
+                  className="mt-4 px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/20 rounded-xl text-sm transition-all"
                 >
                   Retry Connection
                 </button>
@@ -212,19 +212,19 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
 
           {/* Speaking indicator */}
           {isSpeaking && (
-            <div className="absolute bottom-4 left-4 bg-black/60 px-3 py-1.5 rounded-full flex items-center gap-2">
+            <div className="absolute bottom-4 left-4 bg-white/[0.06] backdrop-blur-xl border border-white/[0.1] px-3 py-1.5 rounded-full flex items-center gap-2">
               <div className="flex gap-1">
                 <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse"></span>
                 <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse delay-75"></span>
                 <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse delay-150"></span>
               </div>
-              <span className="text-white/80 text-xs">Processing...</span>
+              <span className="text-white/60 text-xs font-light">Processing...</span>
             </div>
           )}
         </div>
 
         {/* Chat Panel */}
-        <div className="w-full lg:w-80 flex flex-col bg-gray-900/50 rounded-2xl overflow-hidden">
+        <div className="w-full lg:w-80 flex flex-col glass-card overflow-hidden">
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {messages.map((msg, idx) => (
@@ -235,8 +235,8 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
                 <div
                   className={`max-w-[85%] px-3 py-2 rounded-xl text-sm ${
                     msg.role === 'student'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-800 text-white/90'
+                      ? 'bg-blue-500/30 border border-blue-500/20 text-white'
+                      : 'bg-white/[0.06] border border-white/[0.08] text-white/90'
                   }`}
                 >
                   {msg.text}
@@ -246,7 +246,7 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
           </div>
 
           {/* Input */}
-          <div className="p-3 border-t border-white/10">
+          <div className="p-3 border-t border-white/[0.08]">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -254,12 +254,12 @@ export const HeyGenAvatar: React.FC<HeyGenAvatarProps> = ({
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder="Ask a question..."
-                className="flex-1 bg-gray-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-400/60 focus:ring-1 focus:ring-blue-400/20 transition-all"
               />
               <button
                 onClick={sendMessage}
                 disabled={!inputText.trim() || isSpeaking}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg text-white text-sm transition-colors"
+                className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/20 disabled:bg-white/[0.04] disabled:text-white/30 disabled:border-white/[0.06] disabled:cursor-not-allowed rounded-xl text-sm transition-all"
               >
                 Send
               </button>

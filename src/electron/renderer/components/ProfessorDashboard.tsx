@@ -167,23 +167,23 @@ const ProfessorDashboard: React.FC = () => {
   return (
     <div className="w-full h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="drag-region h-14 flex items-center justify-between px-6 border-b border-white/10 shrink-0">
+      <div className="drag-region h-14 flex items-center justify-between px-6 bg-white/[0.04] backdrop-blur-xl border-b border-white/[0.08] shrink-0">
         <div className="no-drag flex items-center gap-4">
-          <h1 className="font-bold text-lg">AI Professor Dashboard</h1>
+          <h1 className="font-medium text-lg gradient-text">AI Professor Dashboard</h1>
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${isHealthy ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
-            <span className="text-sm text-white/60">{isHealthy ? 'Backend OK' : 'Disconnected'}</span>
+            <div className={`w-2 h-2 rounded-full ${isHealthy ? 'bg-blue-400' : 'bg-red-400'} ${isHealthy ? 'shadow-lg shadow-blue-400/30' : ''}`} style={isHealthy ? { animation: 'pulse 2s ease-in-out infinite' } : {}} />
+            <span className="text-sm text-white/50 font-light">{isHealthy ? 'Backend OK' : 'Disconnected'}</span>
           </div>
           {serverIp && (
-            <div className="text-sm text-white/40 font-mono bg-white/5 px-2 py-0.5 rounded">
+            <div className="text-sm text-white/30 font-mono bg-white/[0.04] px-2.5 py-0.5 rounded-lg border border-white/[0.06]">
               {serverIp}:8000
             </div>
           )}
         </div>
         <div className="no-drag flex items-center gap-2">
-          <span className="text-sm text-white/40">{students.length} student{students.length !== 1 ? 's' : ''}</span>
-          <button onClick={() => window.electronAPI?.minimizeWindow()} className="w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded text-white/70">−</button>
-          <button onClick={() => window.electronAPI?.closeWindow()} className="w-6 h-6 flex items-center justify-center hover:bg-red-500 rounded text-white/70">×</button>
+          <span className="text-sm text-white/30 font-light">{students.length} student{students.length !== 1 ? 's' : ''}</span>
+          <button onClick={() => window.electronAPI?.minimizeWindow()} className="w-6 h-6 flex items-center justify-center hover:bg-white/10 rounded-lg text-white/50 transition-colors">−</button>
+          <button onClick={() => window.electronAPI?.closeWindow()} className="w-6 h-6 flex items-center justify-center hover:bg-red-500/80 rounded-lg text-white/50 transition-colors">×</button>
         </div>
       </div>
 
@@ -195,47 +195,49 @@ const ProfessorDashboard: React.FC = () => {
           <div className="col-span-8 space-y-6">
 
             {/* Lecture Loader */}
-            <section className="bg-white/5 rounded-xl p-5 border border-white/10">
-              <h2 className="text-lg font-semibold mb-4">Lecture Content</h2>
+            <section className="glass-card p-6">
+              <h2 className="text-base font-medium tracking-wide text-white/80 mb-4">Lecture Content</h2>
               {lectureStatus?.transcript_loaded ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-green-400">
-                    <span>✓</span>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-blue-400">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                    </svg>
                     <span className="font-medium">{lectureStatus.context?.topic || 'Loaded'}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
-                    <div className="bg-white/5 rounded-lg p-3">
-                      <div className="text-white/40">Transcript</div>
-                      <div className="text-xl font-semibold">{(lectureStatus.transcript_length / 1000).toFixed(1)}k</div>
-                      <div className="text-white/40 text-xs">characters</div>
+                    <div className="glass-card p-4">
+                      <div className="text-white/40 text-xs font-medium tracking-wide">Transcript</div>
+                      <div className="text-xl font-light mt-1">{(lectureStatus.transcript_length / 1000).toFixed(1)}k</div>
+                      <div className="text-white/30 text-xs">characters</div>
                     </div>
-                    <div className="bg-white/5 rounded-lg p-3">
-                      <div className="text-white/40">Concepts</div>
-                      <div className="text-xl font-semibold">{lectureStatus.concepts_count}</div>
-                      <div className="text-white/40 text-xs">scenes</div>
+                    <div className="glass-card p-4">
+                      <div className="text-white/40 text-xs font-medium tracking-wide">Concepts</div>
+                      <div className="text-xl font-light mt-1">{lectureStatus.concepts_count}</div>
+                      <div className="text-white/30 text-xs">scenes</div>
                     </div>
-                    <div className="bg-white/5 rounded-lg p-3">
-                      <div className="text-white/40">Videos</div>
-                      <div className="text-xl font-semibold">{lectureStatus.videos_count}</div>
-                      <div className="text-white/40 text-xs">explainers</div>
+                    <div className="glass-card p-4">
+                      <div className="text-white/40 text-xs font-medium tracking-wide">Videos</div>
+                      <div className="text-xl font-light mt-1">{lectureStatus.videos_count}</div>
+                      <div className="text-white/30 text-xs">explainers</div>
                     </div>
                   </div>
                   <button
                     onClick={loadLecture}
-                    className="text-sm text-white/40 hover:text-white underline"
+                    className="text-sm text-white/30 hover:text-white/60 transition-colors"
                   >
                     Load different lecture
                   </button>
                 </div>
               ) : (
                 <div>
-                  <p className="text-white/50 text-sm mb-4">
+                  <p className="text-white/40 text-sm mb-4 font-light">
                     Select a pipeline output directory to load lecture content.
                   </p>
                   <button
                     onClick={loadLecture}
                     disabled={isLoadingLecture}
-                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 rounded-lg font-medium transition-colors"
+                    className="px-6 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/20 disabled:bg-white/[0.04] disabled:text-white/30 disabled:border-white/[0.06] rounded-xl font-medium transition-all"
                   >
                     {isLoadingLecture ? 'Loading...' : 'Select Output Directory'}
                   </button>
@@ -244,17 +246,17 @@ const ProfessorDashboard: React.FC = () => {
             </section>
 
             {/* Breakout Control */}
-            <section className="bg-white/5 rounded-xl p-5 border border-white/10">
-              <h2 className="text-lg font-semibold mb-4">AI Tutoring (Breakout)</h2>
+            <section className="glass-card p-6">
+              <h2 className="text-base font-medium tracking-wide text-white/80 mb-4">AI Tutoring (Breakout)</h2>
               <div className="flex items-center gap-4">
                 <button
                   onClick={triggerBreakout}
                   disabled={students.length === 0 || isBreakoutActive}
-                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg font-medium transition-colors"
+                  className="px-6 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/20 disabled:bg-white/[0.04] disabled:text-white/30 disabled:border-white/[0.06] disabled:cursor-not-allowed rounded-xl font-medium transition-all"
                 >
                   {isBreakoutActive ? 'Sessions Active' : 'Launch AI Tutoring'}
                 </button>
-                <span className="text-sm text-white/40">
+                <span className="text-sm text-white/40 font-light">
                   {students.length === 0
                     ? 'Waiting for students to connect...'
                     : `${students.length} student${students.length !== 1 ? 's' : ''} ready`}
@@ -262,7 +264,7 @@ const ProfessorDashboard: React.FC = () => {
                 {isBreakoutActive && (
                   <button
                     onClick={() => setIsBreakoutActive(false)}
-                    className="text-sm text-red-400 hover:text-red-300 underline"
+                    className="text-sm text-red-400/80 hover:text-red-400 transition-colors"
                   >
                     Reset
                   </button>
@@ -286,21 +288,21 @@ const ProfessorDashboard: React.FC = () => {
           <div className="col-span-4 space-y-6">
 
             {/* Students List */}
-            <section className="bg-white/5 rounded-xl p-5 border border-white/10">
-              <h2 className="text-lg font-semibold mb-3">Connected Students</h2>
+            <section className="glass-card p-6">
+              <h2 className="text-base font-medium tracking-wide text-white/80 mb-3">Connected Students</h2>
               {students.length === 0 ? (
-                <p className="text-white/40 text-sm">No students connected yet.</p>
+                <p className="text-white/30 text-sm font-light">No students connected yet.</p>
               ) : (
                 <div className="space-y-2">
                   {students.map((s) => (
-                    <div key={s.email} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                    <div key={s.email} className="flex items-center justify-between bg-white/[0.04] hover:bg-white/[0.07] rounded-xl px-4 py-2.5 border border-white/[0.06] transition-colors">
                       <div>
                         <div className="font-medium text-sm">{s.name}</div>
-                        <div className="text-white/40 text-xs">{s.email}</div>
+                        <div className="text-white/30 text-xs">{s.email}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {s.has_avatar && <span className="text-xs text-green-400">Avatar</span>}
-                        <div className="w-2 h-2 rounded-full bg-green-400" />
+                        {s.has_avatar && <span className="text-xs text-blue-400/80">Avatar</span>}
+                        <div className="w-2 h-2 rounded-full bg-blue-400" />
                       </div>
                     </div>
                   ))}
@@ -309,16 +311,16 @@ const ProfessorDashboard: React.FC = () => {
             </section>
 
             {/* Activity Log */}
-            <section className="bg-white/5 rounded-xl p-5 border border-white/10">
-              <h2 className="text-lg font-semibold mb-3">Activity Log</h2>
+            <section className="glass-card p-6">
+              <h2 className="text-base font-medium tracking-wide text-white/80 mb-3">Activity Log</h2>
               <div className="h-64 overflow-y-auto text-xs font-mono space-y-1">
-                {logs.length === 0 && <p className="text-white/30">No activity yet...</p>}
+                {logs.length === 0 && <p className="text-white/20 font-light">No activity yet...</p>}
                 {logs.map((log, i) => (
                   <div key={i} className={`${
-                    log.type === 'error' ? 'text-red-400' :
-                    log.type === 'success' ? 'text-green-400' : 'text-white/60'
+                    log.type === 'error' ? 'text-red-400/80' :
+                    log.type === 'success' ? 'text-green-400/80' : 'text-white/50'
                   }`}>
-                    <span className="text-white/30">[{log.time}]</span> {log.message}
+                    <span className="text-white/20">[{log.time}]</span> {log.message}
                   </div>
                 ))}
                 <div ref={logsEndRef} />
