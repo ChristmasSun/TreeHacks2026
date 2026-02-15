@@ -5,6 +5,7 @@ description = "Generate 3Blue1Brown-style Manim videos from lecture transcripts"
 requires-python = ">=3.12"
 dependencies = [
     "dedalus_labs",
+    "greenlet>=3.3.1",
     "httpx",
     "manim==0.19.2",
     "pocket-tts>=1.0.3",

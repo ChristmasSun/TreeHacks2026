@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:electron\" \"npm run dev:backend\"",
     "dev:electron": "electron-vite dev",
-    "dev:backend": "cd backend && python -m uvicorn app:app --reload --port 8000",
+    "dev:backend": "cd backend && uv run python -m uvicorn app:app --reload --port 8000",
     "build": "electron-vite build",
     "build:electron": "electron-builder",
     "preview": "electron-vite preview",
