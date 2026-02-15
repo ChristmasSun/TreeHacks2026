@@ -2,47 +2,49 @@ import os
 import asyncio
 
 
-async def download_audio(url: str, output_dir: str, start_time: str = "1:25") -> str:
+async def download_audio(url: str, output_dir: str) -> str:
     """Download audio from a YouTube video URL using yt-dlp.
 
     Args:
         url: YouTube video URL.
         output_dir: Directory to save the audio file.
-        start_time: Start timestamp to trim from (e.g. "1:25"). Pass "" to disable.
     """
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "audio.mp3")
+    output_path = os.path.join(output_dir, "audio.%(ext)s")
 
-    print(f"[Download] Downloading audio from {url} (starting at {start_time or '0:00'})...")
+    print(f"[Download] Downloading audio from {url}...")
 
     cmd = [
         "yt-dlp",
         "-x",                        # extract audio only
-        "--audio-format", "mp3",
-        "--audio-quality", "0",       # best quality
         "-o", output_path,
         "--no-playlist",
+        url,
     ]
-
-    if start_time:
-        # --download-sections "*start-inf" downloads from start to end
-        cmd += ["--download-sections", f"*{start_time}-inf", "--force-keyframes-at-cuts"]
-
-    cmd.append(url)
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stdout=None,   # let yt-dlp print progress to terminal
+        stderr=None,
     )
-    stdout, stderr = await process.communicate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=600)
+    except asyncio.TimeoutError:
+        process.kill()
+        raise RuntimeError("yt-dlp timed out after 120 seconds")
 
     if process.returncode != 0:
-        raise RuntimeError(f"yt-dlp failed: {stderr.decode()[:500]}")
+        raise RuntimeError(f"yt-dlp failed with exit code {process.returncode}")
 
-    if not os.path.exists(output_path):
-        raise RuntimeError(f"yt-dlp did not produce {output_path}")
+    # yt-dlp picks the extension; find whatever audio file it wrote
+    audio_file = next(
+        (f for f in os.listdir(output_dir) if f.startswith("audio.")),
+        None,
+    )
+    if audio_file is None:
+        raise RuntimeError(f"yt-dlp did not produce an audio file in {output_dir}")
 
-    size_mb = os.path.getsize(output_path) / (1024 * 1024)
-    print(f"[Download] Saved audio ({size_mb:.1f} MB) to {output_path}")
-    return output_path
+    final_path = os.path.join(output_dir, audio_file)
+    size_mb = os.path.getsize(final_path) / (1024 * 1024)
+    print(f"[Download] Saved audio ({size_mb:.1f} MB) to {final_path}")
+    return final_path

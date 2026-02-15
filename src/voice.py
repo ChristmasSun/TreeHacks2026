@@ -15,7 +15,7 @@ from pocket_tts import TTSModel
 def extract_voice_sample(
     audio_path: str,
     output_dir: str,
-    start_secs: float = 60,
+    start_secs: float = 120,
     duration_secs: float = 30,
 ) -> str:
     """Extract a clip from the lecture audio for voice cloning."""
