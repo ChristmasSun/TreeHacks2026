@@ -88,10 +88,12 @@ export function handleMediaMessage(data, {
         break;
 
       case 15: // VIDEO
+        console.log(`[DEBUG VIDEO] Raw video frame received, content exists: ${!!msg.content?.data}, size: ${msg.content?.data?.length || 0}`);
         if (msg.content?.data) {
           const { user_id, user_name, data: videoData, timestamp } = msg.content;
           const buffer = Buffer.from(videoData, 'base64');
-          
+          console.log(`[DEBUG VIDEO] Processing frame: user=${user_name}, buffer size=${buffer.length}`);
+
           processVideo({
             buffer,
             userId: user_id,
