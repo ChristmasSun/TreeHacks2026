@@ -15,6 +15,9 @@ import { chatWithOpenRouter } from './chatWithOpenrouter.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Version tag to verify deployment
+console.log('[RTMS] Starting version: video-demeanor-v2 (WebSocket broadcast)');
+
 // Track participants we've already DM'd (to avoid spamming)
 const dmSentToParticipants = new Map(); // meetingId -> Set of userIds
 
@@ -622,7 +625,7 @@ RTMSManager.on('video', async ({ buffer, userId, userName, timestamp, meetingId 
   }
   lastVideoFrameTime.set(meetingId, now);
 
-  console.log(`[Video] Frame from ${userName} (${buffer.length} bytes)`);
+  console.log(`[Video] Broadcasting frame from ${userName} (${buffer.length} bytes) via WebSocket`);
 
   // Broadcast via WebSocket to local Python backend
   broadcastToFrontendClients({
