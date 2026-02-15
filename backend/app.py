@@ -57,6 +57,7 @@ from services.quiz_session_manager import (
     cancel_quiz,
     get_session_stats,
 )
+from services.video_uploader import upload_video_to_render
 
 # Configure logging
 logging.basicConfig(
@@ -1155,6 +1156,12 @@ async def handle_chatbot_button_click(payload: dict) -> dict:
         await cancel_quiz(to_jid)
         return {"success": True}
 
+    # Handle "Done Watching" video button
+    if action_value == "video_done":
+        result = await handle_video_completed(to_jid)
+        logger.info(f"Video completed result: {result}")
+        return {"success": True}
+
     # Handle answer buttons (answer_A_questionId)
     answer_letter, question_id = parse_answer_value(action_value)
     if answer_letter and question_id:
@@ -1217,6 +1224,18 @@ async def launch_quiz():
     except Exception as e:
         logger.error(f"Quiz generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Quiz generation failed: {str(e)}")
+
+    # Upload videos to Render for public access via chatbot
+    logger.info("Uploading quiz videos to Render...")
+    for question in quiz.questions:
+        if question.video_path:
+            try:
+                public_url = await upload_video_to_render(question.video_path)
+                if public_url:
+                    question.public_video_url = public_url
+                    logger.info(f"Video uploaded for '{question.concept}': {public_url}")
+            except Exception as e:
+                logger.warning(f"Failed to upload video for {question.concept}: {e}")
 
     # Send to each registered student
     account_id = os.getenv("ZOOM_CHATBOT_ACCOUNT_ID", "")

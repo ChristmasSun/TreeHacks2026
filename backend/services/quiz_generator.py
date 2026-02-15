@@ -30,6 +30,7 @@ class QuizQuestion:
     correct_answer: str  # "A", "B", "C", or "D"
     explanation: str
     video_path: Optional[str] = None
+    public_video_url: Optional[str] = None  # Public URL on Render for chatbot
 
 
 @dataclass

@@ -347,10 +347,16 @@ async def send_incorrect_feedback(
     correct_answer: str,
     explanation: str,
     will_play_video: bool = True,
+    video_url: Optional[str] = None,
     user_jid: Optional[str] = None
 ) -> dict:
     """Send feedback for an incorrect answer."""
-    video_note = "\n\nWatch the explainer video to learn more!" if will_play_video else ""
+    video_note = ""
+    if will_play_video:
+        if video_url:
+            video_note = f"\n\n📹 Watch the explainer video: {video_url}"
+        else:
+            video_note = "\n\nWatch the explainer video to learn more!"
 
     content = {
         "body": [
@@ -364,6 +370,50 @@ async def send_incorrect_feedback(
             {
                 "type": "message",
                 "text": f"{explanation}{video_note}"[:4096]
+            }
+        ]
+    }
+    return await send_chatbot_message(to_jid, account_id, content, user_jid=user_jid)
+
+
+async def send_video_message(
+    to_jid: str,
+    account_id: str,
+    video_url: str,
+    concept: str,
+    user_jid: Optional[str] = None
+) -> dict:
+    """
+    Send a video link message to the student.
+
+    Args:
+        to_jid: Recipient's JID
+        account_id: Account ID
+        video_url: Public URL to the video
+        concept: The concept being explained
+        user_jid: User's JID for API calls
+
+    Returns:
+        API response
+    """
+    content = {
+        "head": {
+            "text": f"📹 Explainer Video: {concept}",
+        },
+        "body": [
+            {
+                "type": "message",
+                "text": f"Watch this short video to understand the concept better:"
+            },
+            {
+                "type": "message",
+                "text": f"🎬 {video_url}"
+            },
+            {
+                "type": "actions",
+                "items": [
+                    {"text": "✅ Done Watching", "value": "video_done", "style": "Primary"}
+                ]
             }
         ]
     }

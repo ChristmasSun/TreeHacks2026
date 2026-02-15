@@ -215,7 +215,7 @@ async def handle_button_click(student_jid: str, account_id: str, action_value: s
         )
         return
 
-    if action_value == "continue_quiz":
+    if action_value == "continue_quiz" or action_value == "video_done":
         # After watching video, continue to next question
         await video_finished(student_jid)
         return

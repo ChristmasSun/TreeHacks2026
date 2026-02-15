@@ -4,9 +4,11 @@ import WebsocketManager from './library/javascript/webSocketManager/WebsocketMan
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import ejs from 'ejs';
 import dotenv from 'dotenv';
+import multer from 'multer';
 import { config } from './config.js';
 import { setupFrontendWss, broadcastToFrontendClients, sharedServices } from './frontendWss.js';
 import { textToSpeechBase64 } from './deepgramService.js';
@@ -14,6 +16,33 @@ import { chatWithOpenRouter } from './chatWithOpenrouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Ensure videos directory exists
+const videosDir = path.join(__dirname, 'public', 'videos');
+if (!fs.existsSync(videosDir)) {
+  fs.mkdirSync(videosDir, { recursive: true });
+}
+
+// Configure multer for video uploads
+const videoStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, videosDir),
+  filename: (req, file, cb) => {
+    // Use provided filename or generate unique one
+    const uniqueName = req.body.filename || `${Date.now()}-${file.originalname}`;
+    cb(null, uniqueName);
+  }
+});
+const videoUpload = multer({
+  storage: videoStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB max
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('video/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed'), false);
+    }
+  }
+});
 
 // Track participants we've already DM'd (to avoid spamming)
 const dmSentToParticipants = new Map(); // meetingId -> Set of userIds
@@ -414,6 +443,60 @@ app.post('/api/trigger-quiz-dm', async (req, res) => {
 
   } catch (error) {
     console.error(`[Quiz] Error triggering DM: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Video upload endpoint - receives videos from Python backend
+app.post('/api/videos/upload', videoUpload.single('video'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No video file provided' });
+    }
+
+    const filename = req.file.filename;
+    const publicUrl = `https://rtms-webhook.onrender.com/videos/${filename}`;
+
+    console.log(`[Video] Uploaded: ${filename} -> ${publicUrl}`);
+
+    res.json({
+      success: true,
+      filename,
+      url: publicUrl
+    });
+  } catch (error) {
+    console.error(`[Video] Upload error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// List uploaded videos
+app.get('/api/videos', (req, res) => {
+  try {
+    const files = fs.readdirSync(videosDir);
+    const videos = files
+      .filter(f => f.endsWith('.mp4') || f.endsWith('.webm'))
+      .map(f => ({
+        filename: f,
+        url: `https://rtms-webhook.onrender.com/videos/${f}`
+      }));
+    res.json({ success: true, videos });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a video
+app.delete('/api/videos/:filename', (req, res) => {
+  try {
+    const filepath = path.join(videosDir, req.params.filename);
+    if (fs.existsSync(filepath)) {
+      fs.unlinkSync(filepath);
+      res.json({ success: true });
+    } else {
+      res.status(404).json({ success: false, error: 'Video not found' });
+    }
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });

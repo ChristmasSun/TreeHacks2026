@@ -15,6 +15,7 @@ from .zoom_chatbot_service import (
     send_incorrect_feedback,
     send_quiz_complete,
     send_text_message,
+    send_video_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -215,6 +216,8 @@ async def handle_answer(
         # Wrong answer - record concept, send feedback, trigger video
         session.wrong_concepts.append(question.concept)
 
+        # Check if we have a public video URL for the chatbot
+        has_public_video = question.public_video_url is not None
         will_play_video = question.video_path is not None and session.on_play_video is not None
 
         await send_incorrect_feedback(
@@ -222,18 +225,30 @@ async def handle_answer(
             account_id=session.account_id,
             correct_answer=question.correct_answer,
             explanation=question.explanation,
-            will_play_video=will_play_video,
+            will_play_video=has_public_video or will_play_video,
+            video_url=question.public_video_url,
             user_jid=session.user_jid
         )
 
-        if will_play_video:
-            # Trigger video playback
+        # Send video message with link if we have a public URL
+        if has_public_video:
+            await send_video_message(
+                to_jid=session.student_jid,
+                account_id=session.account_id,
+                video_url=question.public_video_url,
+                concept=question.concept,
+                user_jid=session.user_jid
+            )
             session.status = SessionStatus.WATCHING_VIDEO
+            session.pending_follow_up = question
+            result["next_action"] = "watch_video"
+            result["video_url"] = question.public_video_url
 
-            # Store the question for follow-up generation
+        if will_play_video:
+            # Also trigger video playback in Electron dashboard
+            session.status = SessionStatus.WATCHING_VIDEO
             session.pending_follow_up = question
 
-            # Call the video playback callback
             await session.on_play_video(
                 session.student_jid,
                 question.concept,
@@ -242,7 +257,8 @@ async def handle_answer(
 
             result["next_action"] = "watch_video"
             result["video_path"] = question.video_path
-        else:
+
+        if not has_public_video and not will_play_video:
             # No video - just move to next question
             session.current_question_idx += 1
 
