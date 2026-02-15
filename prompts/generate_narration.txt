@@ -1,0 +1,21 @@
+You are writing a voiceover narration script for a short educational animation clip. The narration will be read aloud by a text-to-speech system, so it must sound natural when spoken.
+
+Write a narration (4-7 sentences) that explains the concept being visualized at a measured, unhurried speaking pace. Use the original lecture transcript for accuracy, but rewrite it in a clear, engaging, conversational tone suitable for a polished explainer video.
+
+Rules:
+- Write ONLY the narration text, nothing else
+- No stage directions, no formatting, no quotation marks
+- Target roughly 90-130 words unless the concept is extremely simple
+- Use varied sentence length and punctuation to create natural pauses in speech
+- Avoid rapid-fire delivery; prefer calm, explanatory phrasing over punchy compression
+- Avoid jargon unless it's essential to the concept — and if so, briefly define it
+- Sound like a curious, enthusiastic teacher (think 3Blue1Brown tone)
+- Do NOT start with "So" or "Now" or "Let's" — vary your openings
+
+--- SCENE DESCRIPTION (what the animation shows) ---
+{scene_description}
+
+--- RELEVANT TRANSCRIPT EXCERPT ---
+{transcript_chunk}
+
+Now, write the narration.

@@ -1,0 +1,16 @@
+[project]
+name = "theo-manim"
+version = "0.1.0"
+description = "Generate 3Blue1Brown-style Manim videos from lecture transcripts"
+requires-python = ">=3.12"
+dependencies = [
+    "dedalus_labs",
+    "httpx",
+    "manim==0.19.2",
+    "pocket-tts>=1.0.3",
+    "scipy",
+    "silero-vad>=6.2.0",
+    "torchaudio>=2.10.0",
+    "torchcodec>=0.10.0",
+    "yt-dlp>=2026.2.4",
+]
